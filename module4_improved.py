@@ -14,25 +14,31 @@ WINDOW_SIZE  = 4
 PRED_STEPS   = [1, 2, 3]
 VAL_FRAC     = 0.20
 SEED         = 42                       # reproducible FPS anchor selection
-# SMOOTH_WINDOW: Savitzky-Golay temporal smoothing applied to each video's raw
-# trajectory before windowing. Root-caused and validated against a real
-# reconstructed checkpoint (workspace_v3): the raw per-frame trajectory is
-# dominated by high-frequency reconstruction noise -- Module 2 assumes a
-# perfectly static camera, so any real camera motion (hand tremor, scope
-# drift) has nowhere to go but into the per-Gaussian deformation field, and
-# monocular depth is estimated independently per frame with no temporal
-# consistency term. Measured directly: raw frame-to-frame motion has ~zero
-# momentum (pooled Pearson r=0.077 between consecutive displacement vectors),
-# and constant-velocity extrapolation LOSES to the naive "nothing moves"
-# baseline by 27-58% across pred_steps 1-3. After this smoothing, autocorr
-# rises to ~0.89 and constant-velocity BEATS naive by 30-57% at the same
-# horizons -- proving a real, learnable deformation signal exists and was
-# simply buried under noise. This is why Module 5 could never beat naive
-# regardless of architecture/training changes: the training targets
-# themselves were mostly noise. window=11 chosen from a sweep (7/9/11) that
-# consistently favoured the larger, still-conservative option.
-SMOOTH_WINDOW    = 11
-SMOOTH_POLYORDER = 2
+# Savitzky-Golay temporal smoothing, applied per-video to the raw trajectory before
+# windowing. Root-caused and validated against a real reconstructed checkpoint
+# (workspace_v3): the raw per-frame trajectory is dominated by high-frequency
+# reconstruction noise -- Module 2 assumes a perfectly static camera, so any real
+# camera motion (hand tremor, scope drift) has nowhere to go but into the
+# per-Gaussian deformation field, and monocular depth is estimated independently
+# per frame with no temporal consistency term. Measured directly: raw frame-to-frame
+# motion has ~zero momentum (pooled Pearson r=0.077 between consecutive displacement
+# vectors), and constant-velocity extrapolation LOSES to the naive "nothing moves"
+# baseline by 27-58% across pred_steps 1-3. After smoothing, autocorr rises to ~0.89
+# and constant-velocity BEATS naive by 30-57% at the same horizons -- proving a real,
+# learnable deformation signal exists and was simply buried under noise.
+#
+# The window is chosen ADAPTIVELY, per video, not fixed -- that one validated
+# checkpoint (workspace_v3) happens to be one of the better-reconstructed videos
+# (PSNR~29dB); a noisier, lower-PSNR video plausibly needs more smoothing to recover
+# the same clean signal, and a single fixed window has no way to know that. See
+# select_smoothing_window(): each video sweeps SMOOTH_WINDOW_CANDIDATES and picks the
+# SMALLEST window whose constant-velocity-vs-naive score clears SMOOTH_THRESHOLD --
+# clean videos aren't over-smoothed, noisier videos automatically get more, and any
+# video that never clears the bar even at the largest candidate is flagged in QT7
+# rather than silently used as-is.
+SMOOTH_WINDOW_CANDIDATES = (5, 7, 9, 11, 15, 19, 25)
+SMOOTH_THRESHOLD          = 15.0   # minimum acceptable const-vel-vs-naive %, see above
+SMOOTH_POLYORDER          = 2
 COMBINED_DIR = f'{DRIVE_BASE}/module4_combined'
 
 assert os.path.exists(COMBINED_DIR), (
@@ -70,29 +76,80 @@ def farthest_point_sampling(points, n_samples, rng):
     return sel
 
 
-def chamfer_np(pred, gt):
-    d = np.linalg.norm(pred[:, None, :] - gt[None, :, :], axis=-1)
-    return d.min(axis=1).mean() + d.min(axis=0).mean()
-
-
-def const_velocity_vs_naive(traj_n, window_size, pred_steps):
+def const_velocity_vs_naive(traj_n, window_size, pred_steps, device=None):
     """For each pred_step, mean-CD improvement (%) of constant-velocity extrapolation
     (G_t + h*(G_t - G_t-1)) over the naive copy-last-frame baseline. This is the
     diagnostic that exposed the noise-dominated-trajectory problem on real reconstructed
     data (raw: -27% to -58%, i.e. constant-velocity LOSES to naive -- no exploitable
-    momentum) and confirms SMOOTH_WINDOW fixes it (+30% to +57% after smoothing).
-    Positive means real, learnable motion continuity exists in this video's trajectory."""
-    N_F = traj_n.shape[0]
+    momentum) and confirms smoothing fixes it (+30% to +57% after smoothing).
+    Positive means real, learnable motion continuity exists in this video's trajectory.
+
+    Batched via torch (one cdist call per pred_step across all valid windows at once)
+    rather than a per-window Python/numpy loop -- needed because the adaptive smoothing
+    search below calls this ~7x per video across all 10 videos; the naive per-window
+    loop was too slow to run at N_ANCHOR=512 scale within that budget."""
+    dev = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+    traj_t = torch.from_numpy(traj_n).float().to(dev)
+    N_F = traj_t.shape[0]
     out = {}
     for h in pred_steps:
-        naive_cds, cv_cds = [], []
-        for t in range(window_size, N_F - h):
-            G_tm1, G_t, G_future = traj_n[t - 1], traj_n[t], traj_n[t + h]
-            naive_cds.append(chamfer_np(G_t, G_future))
-            cv_cds.append(chamfer_np(G_t + h * (G_t - G_tm1), G_future))
-        naive_mean, cv_mean = np.mean(naive_cds), np.mean(cv_cds)
+        ts = list(range(window_size, N_F - h))
+        if not ts:
+            out[h] = 0.0
+            continue
+        idx_tm1 = torch.tensor([t - 1 for t in ts], device=dev)
+        idx_t   = torch.tensor(ts, device=dev)
+        idx_fut = torch.tensor([t + h for t in ts], device=dev)
+        G_tm1, G_t, G_future = traj_t[idx_tm1], traj_t[idx_t], traj_t[idx_fut]   # (B, N_A, 3) each
+
+        naive_pred = G_t
+        cv_pred    = G_t + h * (G_t - G_tm1)
+
+        d_naive = torch.cdist(naive_pred, G_future)   # (B, N_A, N_A)
+        d_cv    = torch.cdist(cv_pred, G_future)
+        cd_naive = (d_naive.min(dim=2).values.mean(dim=1) + d_naive.min(dim=1).values.mean(dim=1))
+        cd_cv    = (d_cv.min(dim=2).values.mean(dim=1)    + d_cv.min(dim=1).values.mean(dim=1))
+
+        naive_mean, cv_mean = cd_naive.mean().item(), cd_cv.mean().item()
         out[h] = float((naive_mean - cv_mean) / max(naive_mean, 1e-9) * 100)
     return out
+
+
+def select_smoothing_window(traj_raw, ctr, scl, window_size, pred_steps,
+                             candidates=(5, 7, 9, 11, 15, 19, 25),
+                             threshold=15.0, polyorder=2, device=None):
+    """Per-video ADAPTIVE smoothing: picks the SMALLEST candidate window whose
+    constant-velocity-vs-naive score (averaged over pred_steps) clears `threshold`,
+    instead of one fixed window for every video regardless of how noisy it is.
+
+    Why this matters (and why a single fixed window was the wrong design): the fix
+    was validated on exactly one real checkpoint (workspace_v3, PSNR~29.18dB -- one
+    of the *better*-reconstructed videos). A noisier, lower-PSNR video plausibly needs
+    more smoothing to recover the same clean signal; picking the SMALLEST window that
+    clears the bar (rather than always maximising) means clean videos aren't
+    over-smoothed while noisier videos automatically get more. Returns
+    (chosen_window, score_at_chosen, all_scores, crossed_threshold)."""
+    N_F = traj_raw.shape[0]
+    traj_raw_n = (traj_raw - ctr) / scl
+    all_scores = {}
+    chosen_window, chosen_score = None, None
+    for w in candidates:
+        w_eff = min(w, N_F if N_F % 2 == 1 else N_F - 1)
+        if w_eff < polyorder + 2 or w_eff < 3:
+            continue
+        traj_s = savgol_filter(traj_raw_n, window_length=w_eff, polyorder=polyorder, axis=0)
+        cv = const_velocity_vs_naive(traj_s, window_size, pred_steps, device=device)
+        score = float(np.mean(list(cv.values())))
+        all_scores[w_eff] = score
+        if chosen_window is None and score >= threshold:
+            chosen_window, chosen_score = w_eff, score
+    crossed = chosen_window is not None
+    if not crossed:
+        # No candidate cleared the bar even at the largest window tried -- use the
+        # best of what was tried, but this gets flagged in QT7 rather than silently accepted.
+        chosen_window = max(all_scores, key=all_scores.get)
+        chosen_score = all_scores[chosen_window]
+    return chosen_window, chosen_score, all_scores, crossed
 
 
 def select_anchors(traj_full, ckpt_path, n_anchor, rng):
@@ -152,14 +209,18 @@ for vi, ws_name in enumerate(workspace_names):
             'pts_anc':  traj_full[0][anc],
         }
 
-    # Temporal smoothing: window must be odd and <= N_F, or savgol_filter raises.
-    # Every video in this pipeline has N_F in the 95-300 range, far above SMOOTH_WINDOW=11,
-    # so this clamp only matters for pathologically short clips.
-    win = min(SMOOTH_WINDOW, N_F if N_F % 2 == 1 else N_F - 1)
-    if win >= SMOOTH_POLYORDER + 2 and win >= 3:
-        traj = savgol_filter(traj_raw, window_length=win, polyorder=SMOOTH_POLYORDER, axis=0)
-    else:
-        traj = traj_raw   # too short to smooth meaningfully -- fall back to raw
+    # Adaptive per-video smoothing: sweep SMOOTH_WINDOW_CANDIDATES, pick the smallest
+    # window whose constant-velocity-vs-naive score clears SMOOTH_THRESHOLD. Noisier
+    # (e.g. lower-PSNR) videos need more smoothing to recover the same clean signal;
+    # this measures each video's OWN noise directly instead of assuming one fixed
+    # window (validated on a single, above-average-PSNR checkpoint) fits every video.
+    ctr_raw = traj_raw[0].mean(axis=0)
+    scl_raw = np.abs(traj_raw[0] - ctr_raw).max() + 1e-8
+    win, win_score, win_all_scores, win_crossed = select_smoothing_window(
+        traj_raw, ctr_raw, scl_raw, WINDOW_SIZE, PRED_STEPS,
+        candidates=SMOOTH_WINDOW_CANDIDATES, threshold=SMOOTH_THRESHOLD,
+        polyorder=SMOOTH_POLYORDER, device=DEVICE)
+    traj = savgol_filter(traj_raw, window_length=win, polyorder=SMOOTH_POLYORDER, axis=0)
 
     # Normalise per-video (preserves relative motion semantics)
     ctr    = traj[0].mean(axis=0)
@@ -171,15 +232,12 @@ for vi, ws_name in enumerate(workspace_names):
     mean_disp_raw[ws_name] = float(disp.mean())
     video_order.append(ws_name)
 
-    # Smoothing-benefit diagnostic: does constant-velocity extrapolation beat naive
-    # before vs after smoothing? This is the exact test that exposed the noise-dominated
-    # trajectory problem on real data -- computed per-video here so QT7 can confirm the
-    # fix actually holds for every video, not just the one it was diagnosed on.
-    ctr_raw = traj_raw[0].mean(axis=0)
-    scl_raw = np.abs(traj_raw[0] - ctr_raw).max() + 1e-8
+    # Smoothing-benefit diagnostic for QT7: raw (no smoothing) vs the chosen adaptive
+    # window, so QT7 can confirm the fix actually holds for every video, not just the
+    # one it was diagnosed on -- and flag any video that never cleared the bar.
     traj_raw_n = (traj_raw - ctr_raw) / scl_raw
-    cv_before = const_velocity_vs_naive(traj_raw_n, WINDOW_SIZE, PRED_STEPS)
-    cv_after  = const_velocity_vs_naive(traj_n, WINDOW_SIZE, PRED_STEPS)
+    cv_before = const_velocity_vs_naive(traj_raw_n, WINDOW_SIZE, PRED_STEPS, device=DEVICE)
+    cv_after  = const_velocity_vs_naive(traj_n, WINDOW_SIZE, PRED_STEPS, device=DEVICE)
 
     # Build windows PER pred_step, split temporally 80/20 WITHIN each pred_step,
     # then combine. Splitting the concatenated multi-step list (as before) let
@@ -223,8 +281,10 @@ for vi, ws_name in enumerate(workspace_names):
     met_p    = f'{ws_path}/metrics.json'
     psnr_str = f'{json.load(open(met_p))["psnr_mean"]:.2f}dB' if os.path.exists(met_p) else 'n/a'
     total_w  = len(v_tr_inp) + len(v_va_inp)
+    flag = '' if win_crossed else '  ⚠️ never cleared threshold'
     print(f'  ✅ {ws_name:<25}  frames={N_F}  total={total_w}  '
-          f'train={len(v_tr_inp)}  val={len(v_va_inp)}  PSNR={psnr_str}')
+          f'train={len(v_tr_inp)}  val={len(v_va_inp)}  PSNR={psnr_str}  '
+          f'smooth_win={win}{flag}')
 
     per_video_stats.append({
         'video_id': vi, 'workspace': ws_name, 'frames': N_F,
@@ -234,6 +294,8 @@ for vi, ws_name in enumerate(workspace_names):
         'mean_disp_raw': mean_disp_raw[ws_name], 'psnr': psnr_str,
         'const_vel_vs_naive_before_smoothing': cv_before,
         'const_vel_vs_naive_after_smoothing':  cv_after,
+        'smooth_window': int(win), 'smooth_window_crossed_threshold': bool(win_crossed),
+        'smooth_window_all_scores': win_all_scores,
     })
 
 if not per_video_stats:
@@ -305,8 +367,9 @@ meta4_out = {
     'pred_steps'        : PRED_STEPS,
     'val_frac'          : VAL_FRAC,
     'seed'              : SEED,
-    'smooth_window'     : SMOOTH_WINDOW,
-    'smooth_polyorder'  : SMOOTH_POLYORDER,
+    'smooth_window_candidates' : list(SMOOTH_WINDOW_CANDIDATES),
+    'smooth_threshold'         : SMOOTH_THRESHOLD,
+    'smooth_polyorder'         : SMOOTH_POLYORDER,
     'global_disp_ref'   : GLOBAL_DISP_REF,
     'total_train'       : int(M_tr),
     'total_val'         : int(M_va),
@@ -397,21 +460,26 @@ for v in per_video_stats:
     print(f'  {status} {v["workspace"]:<25} val counts per pred_step: {v["val_ps_counts"]}')
 print(f'  {"✅ PASS — every video validates on all pred_steps" if qt6_pass else "❌ FAIL — some video is missing a horizon in val"}')
 
-print(f'\nQT7 — Temporal smoothing benefit (constant-velocity vs naive, mean over pred_steps):')
+print(f'\nQT7 — Adaptive temporal smoothing benefit (constant-velocity vs naive, mean over pred_steps):')
 print(f'  Root-caused on real reconstructed data: raw trajectories are noise-dominated '
       f'(near-zero frame-to-frame momentum), so constant-velocity extrapolation LOSES to '
       f'the naive "nothing moves" baseline -- meaning there was no learnable signal for '
-      f'Module 5 to find, regardless of architecture or training changes. Smoothing should '
-      f'flip this to a clear win for every video below.')
+      f'Module 5 to find, regardless of architecture or training changes. Each video picks '
+      f'its OWN smoothing window (candidates={SMOOTH_WINDOW_CANDIDATES}, threshold={SMOOTH_THRESHOLD}%) '
+      f'rather than one size fitting all, since noisier (e.g. lower-PSNR) videos need more '
+      f'smoothing to recover the same clean signal.')
 qt7_pass = True
 for v in per_video_stats:
     before = np.mean(list(v['const_vel_vs_naive_before_smoothing'].values()))
     after  = np.mean(list(v['const_vel_vs_naive_after_smoothing'].values()))
-    ok = after > 0
+    crossed = v['smooth_window_crossed_threshold']
+    ok = crossed and after > 0
     qt7_pass &= ok
     status = '✅' if ok else '⚠️ '
-    print(f'  {status} {v["workspace"]:<25} const-vel vs naive: {before:+6.1f}% (raw) -> {after:+6.1f}% (smoothed)')
-print(f'  {"✅ PASS — smoothing reveals real, learnable motion in every video" if qt7_pass else "⚠️  Some video still shows no exploitable signal after smoothing -- consider a larger SMOOTH_WINDOW for that video"}')
+    tag = '' if crossed else '  ⚠️ NEVER CLEARED THRESHOLD even at largest candidate window -- treat this video\'s data with caution'
+    print(f'  {status} {v["workspace"]:<25} PSNR={v["psnr"]:<8} window={v["smooth_window"]:>2d}  '
+          f'const-vel vs naive: {before:+6.1f}% (raw) -> {after:+6.1f}% (smoothed){tag}')
+print(f'  {"✅ PASS — every video reaches a clean, learnable signal after adaptive smoothing" if qt7_pass else "⚠️  At least one video never reached a reliable signal -- see flags above; consider excluding or down-weighting it in Module 5"}')
 
 all_pass = qt1_pass and qt2_pass and qt3_pass and qt4_pass and qt5_pass and qt6_pass and qt7_pass
 print(f'\n{"✅ ALL QUALITY TESTS PASSED" if all_pass else "⚠️  Review flagged tests above"}')
@@ -550,8 +618,8 @@ print(f'  Pred steps       : {PRED_STEPS}')
 print(f'  Train windows    : {M_tr:,}')
 print(f'  Val windows      : {M_va:,}')
 print(f'  Cross-video ratio: {ratio_before:.2f}x raw → {ratio_after:.2f}x equalised')
-print(f'  Smoothing        : Savitzky-Golay window={SMOOTH_WINDOW}, polyorder={SMOOTH_POLYORDER} '
-      f'(see QT7 for per-video constant-velocity-vs-naive validation)')
+print(f'  Smoothing        : Savitzky-Golay, per-video adaptive window from {SMOOTH_WINDOW_CANDIDATES} '
+      f'(polyorder={SMOOTH_POLYORDER}, threshold={SMOOTH_THRESHOLD}% -- see QT7 for the window each video chose)')
 print(f'  Saved arrays     : train/val_{{inputs,targets,deltas,disp_norm,video_id,pred_step}}.npy')
 print(f'  Saved metadata   : {COMBINED_DIR}/module4_metadata.json')
 print(f'  Saved figure     : {COMBINED_DIR}/module4_qa.png')
