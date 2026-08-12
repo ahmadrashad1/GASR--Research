@@ -1,0 +1,12 @@
+# Raw workspace data dump -- 409MB, exceeds GitHub's 100MB single-file hard limit.
+# Contains frames/masks/depth/checkpoints for one video; lives on Google Drive per
+# the pipeline's own DRIVE_BASE convention, not meant to be git-tracked.
+workspace_v3-20260810T112521Z-1-001.zip
+workspace_v3/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+
+# Claude Code local tool config (machine-specific permissions, not project content)
+.claude/
