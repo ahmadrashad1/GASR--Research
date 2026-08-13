@@ -390,6 +390,29 @@ _arch_cfg = {
 _cfg = dict(_arch_cfg, DATA_SCALE=DATA_SCALE, LR=LR, TOTAL_EPOCHS=TOTAL_EPOCHS,
             BATCH_SIZE=BATCH_SIZE, MICRO_BATCH=MICRO_BATCH, MIN_SNR_GAMMA=MIN_SNR_GAMMA)
 
+# Separate from _arch_cfg: fingerprints Module 4's actual OUTPUT DATA (not just its config),
+# so a re-run of Module 4 (e.g. the adaptive-smoothing fix, or adding/removing a video) is
+# detected even though nothing about the model architecture changed. Without this, a resumed
+# checkpoint silently keeps training against a NEW dataset while still carrying over
+# best_cd / epochs_without_improvement measured on the OLD one -- concretely observed: a
+# checkpoint resumed after Module 4 was regenerated needed only ~10 epochs to exhaust an
+# early-stopping counter that was already nearly-tripped from the *previous* (pre-fix)
+# dataset's plateau, stopping at 47% of TOTAL_EPOCHS with the model barely exposed to the
+# corrected data at all. Cheap deterministic subsample + summary stats, not cryptographic --
+# only needs to change when the underlying arrays actually change.
+import hashlib
+def _compute_data_fingerprint():
+    parts = [
+        str(train_delta.shape), str(val_delta.shape),
+        f'{float(train_delta.mean()):.8f}', f'{float(train_delta.std()):.8f}',
+        f'{float(val_delta.mean()):.8f}', f'{float(val_delta.std()):.8f}',
+    ]
+    sample = train_delta.reshape(-1)[::997][:2000]
+    parts.append(hashlib.sha256(sample.tobytes()).hexdigest())
+    return hashlib.sha256('|'.join(parts).encode()).hexdigest()
+
+_data_fingerprint = _compute_data_fingerprint()
+
 
 @torch.no_grad()
 def update_ema(decay):
@@ -406,7 +429,7 @@ def make_ckpt(epoch, train_losses, val_cds, val_epochs, best_cd, epochs_without_
         'scaler': scaler.state_dict(),
         'train_losses': train_losses, 'val_cds': val_cds, 'val_epochs': val_epochs,
         'best_cd': best_cd, 'epochs_without_improvement': epochs_without_improvement,
-        'config': _cfg, 'arch_cfg': _arch_cfg,
+        'config': _cfg, 'arch_cfg': _arch_cfg, 'data_fingerprint': _data_fingerprint,
         'torch_rng_state': torch.get_rng_state(), 'numpy_rng_state': np.random.get_state(),
     }
 
@@ -418,7 +441,18 @@ epochs_without_improvement = 0   # early-stopping counter, persisted across resu
 if os.path.exists(CKPT_LATEST):
     try:
         ck = torch.load(CKPT_LATEST, map_location=DEVICE, weights_only=False)
-        if ck.get('arch_cfg') == _arch_cfg:
+        arch_ok = ck.get('arch_cfg') == _arch_cfg
+        data_ok = ck.get('data_fingerprint') == _data_fingerprint
+        if arch_ok and not data_ok:
+            backup = CKPT_LATEST.replace('.pth', f'_predates_data_change_{int(time.time())}.pth')
+            os.rename(CKPT_LATEST, backup)
+            print(f'⚠️  Module 4\'s dataset has changed since this checkpoint was saved (different '
+                  f'data fingerprint -- e.g. Module 4 was re-run with a fix, or a video was '
+                  f'added/removed) — backed up to {backup}, starting fresh. Resuming old weights '
+                  f'against changed data would also resume best_cd/epochs_without_improvement '
+                  f'measured on the OLD data, letting early stopping trigger almost immediately '
+                  f'without the model actually learning the new data.')
+        elif arch_ok and data_ok:
             model.load_state_dict(ck['model'])
             ema_model.load_state_dict(ck['ema'])
             optimizer.load_state_dict(ck['optimizer'])
