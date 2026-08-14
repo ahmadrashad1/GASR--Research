@@ -10,3 +10,8 @@ __pycache__/
 
 # Claude Code local tool config (machine-specific permissions, not project content)
 .claude/
+
+# Generated dependency directories buried inside fyp-1 (installed packages, not source)
+fyp-1/module-4-5-explanation-references/.venv/
+fyp-1/module-4-5-explanation/node_modules/
+fyp-1/report/node_modules/
