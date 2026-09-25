@@ -51,6 +51,37 @@ NOISE_AUG       = 0.0003
 # not change the architecture or invalidate checkpoints.
 MAX_PRED_STEP   = 8
 
+# TARGET_MODE — what the diffusion model is actually asked to produce.
+#
+#   'delta'       : the displacement itself,  G_{t+k} - G_t         (the previous behaviour)
+#   'cv_residual' : the CORRECTION to constant-velocity extrapolation,
+#                   G_{t+k} - (G_t + (G_t - G_{t-1}) * k)
+#
+# Why this changed. A full 500-epoch 'delta' run never beat the naive zero-motion baseline:
+# best validation CD 0.01568 against naive 0.01557, reached at epoch ~40-60 and drifting
+# upward after ~260 as the model overfitted. The diagnosis is not "no signal learned" --
+# Module 6 measures cosine +0.40 between predicted and true displacement at two frames
+# ahead -- it is that the direction is roughly right while the magnitude is not, and an
+# error in magnitude is enough to lose to predicting nothing at all.
+#
+# 'cv_residual' fixes the floor rather than the ceiling. Under 'delta', a model that gives
+# up and emits zero reproduces the NAIVE baseline. Under 'cv_residual', the same zero
+# output reproduces CONSTANT VELOCITY, which Module 4's QT7 measures as 30-57% better than
+# naive on this exact data after adaptive smoothing. So the worst case stops being "ties
+# with naive" and becomes "ties with a baseline that already beats naive", and everything
+# the model does learn is spent on the part linear extrapolation cannot express.
+#
+# This also makes the objective easier in the way that matters: the residual is smaller
+# and much less correlated with the context than the raw displacement, so DATA_SCALE
+# (recomputed below from whichever target is selected) no longer has to stretch a signal
+# that is mostly predictable by a two-line formula.
+#
+# Set back to 'delta' to reproduce the earlier run. Listed in _arch_cfg, so switching
+# modes retires the old checkpoint automatically instead of silently resuming a model
+# trained against a different objective.
+TARGET_MODE     = 'cv_residual'
+assert TARGET_MODE in ('delta', 'cv_residual')
+
 BATCH_SIZE      = 32             # effective batch size (training dynamics) -- unchanged
 MICRO_BATCH     = 16              # actual per-forward-pass batch -- fits a T4's ~14.5GB
                                    # (encode_context folds N_ANCHOR into the batch dim for its
@@ -88,7 +119,12 @@ WARMUP_EPOCHS   = 35
 #     refused outright.
 # Either way the checkpoint records the horizon it was actually annealed against, so the
 # run stays self-describing after the change.
-TOTAL_EPOCHS    = 500
+# 200, cut from 500. The 500-epoch run reached its best validation CD at epoch ~40-60 and
+# then got steadily WORSE -- training loss still falling while validation error rose, i.e.
+# 400 of those epochs were spent overfitting. 200 leaves generous margin past where the
+# previous run peaked while letting the cosine schedule anneal fully, and CKPT_BEST still
+# keeps whichever epoch actually validates best.
+TOTAL_EPOCHS    = 200
 EMA_DECAY       = 0.9999
 GRAD_CLIP       = 1.0
 # VAL_EVERY / VAL_SUBSET_SIZE: an older run validated only every 50 epochs on the full
@@ -134,13 +170,13 @@ LR_SCHEDULE      = 'cosine'
 MIN_LR           = 1e-6
 LR_PATIENCE      = max(1, PATIENCE // 2)   # 'plateau' schedule only
 LR_FACTOR        = 0.5                     # 'plateau' schedule only
-WEIGHT_DECAY     = 0.01            # AdamW's own default, pinned explicitly: with early
-                                    # stopping off, the regularisation strength is now the
-                                    # main defence against the late-run overfitting the
-                                    # previous run measured, so it should be a visible,
-                                    # deliberate knob rather than an implicit library
-                                    # default. Raise toward 0.05 if the val-CD curve turns
-                                    # upward well before TOTAL_EPOCHS.
+WEIGHT_DECAY     = 0.05            # Raised from AdamW's 0.01 default: the 500-epoch run
+                                    # overfitted measurably (validation CD rising from
+                                    # ~epoch 260 while training loss kept falling), which is
+                                    # exactly the condition the old comment here said to
+                                    # raise this for. With early stopping off, regularisation
+                                    # strength is the main defence against that, so it is a
+                                    # visible, deliberate knob rather than a library default.
 EMA_WARMUP_STEPS = 2000            # EMA_DECAY=0.9999 has a ~10k-step memory, so from a
                                     # random init the EMA weights stay dominated by noise
                                     # for the first ~50 epochs and every validation round
@@ -235,10 +271,32 @@ assert train_ps.max() <= MAX_PRED_STEP and val_ps.max() <= MAX_PRED_STEP, (
     f'embedding only has room for {MAX_PRED_STEP} -- raise MAX_PRED_STEP (this changes the '
     f'architecture and so restarts training).')
 
-DATA_SCALE = float(1.0 / (train_delta.std() + 1e-8))
+# Constant-velocity displacement for every window, in the SAME displacement-equalised space
+# as Module 4's deltas: (last - previous) * k, scaled by that window's disp_norm factor.
+# Module 4 already applied disp_norm to its deltas, so the two are directly comparable and
+# no Module 4 re-run is needed to switch target modes.
+def _cv_delta(inp, ps, dnorm):
+    vel = inp[:, -1] - inp[:, -2]                      # per-window velocity, normalised space
+    return vel * ps[:, None, None].astype(np.float32) * dnorm[:, None, None]
 
-train_x0 = train_delta * DATA_SCALE       # near-unit-variance training target
-val_x0   = val_delta   * DATA_SCALE
+train_cv = _cv_delta(train_inp, train_ps, train_dnorm)
+val_cv   = _cv_delta(val_inp,   val_ps,   val_dnorm)
+
+if TARGET_MODE == 'cv_residual':
+    train_target_x0 = train_delta - train_cv          # what constant velocity gets wrong
+    val_target_x0   = val_delta   - val_cv
+else:
+    train_target_x0 = train_delta
+    val_target_x0   = val_delta
+
+# DATA_SCALE normalises whichever target was selected to ~unit variance. Recomputed rather
+# than reused: the residual is a different (smaller) quantity than the raw delta, and
+# feeding a differently-scaled x0 into the same schedule is exactly the "signal drowned in
+# diffusion noise" failure this scaling exists to prevent.
+DATA_SCALE = float(1.0 / (train_target_x0.std() + 1e-8))
+
+train_x0 = train_target_x0 * DATA_SCALE   # near-unit-variance training target
+val_x0   = val_target_x0   * DATA_SCALE
 
 M_tr, W, N_A, _ = train_inp.shape
 M_va = len(val_inp)
@@ -249,7 +307,12 @@ print('  MODULE 5 — Conditional Diffusion Model')
 print('='*60)
 print(f'  Device        : {DEVICE}')
 print(f'  Train windows : {M_tr:,}  |  Val windows: {M_va:,}')
-print(f'  DATA_SCALE    : {DATA_SCALE:.3f}  (train_delta std {train_delta.std():.6f} -> ~1.0)')
+print(f'  Target        : {TARGET_MODE}' + ('   (model predicts the CORRECTION to '
+      'constant velocity; zero output = constant-velocity extrapolation)'
+      if TARGET_MODE == 'cv_residual' else
+      '   (model predicts the raw displacement; zero output = naive no-motion)'))
+print(f'  DATA_SCALE    : {DATA_SCALE:.3f}  (target std {train_target_x0.std():.6f} -> ~1.0; '
+      f'raw delta std {train_delta.std():.6f})')
 PRED_STEPS_PRESENT = sorted(set(np.unique(train_ps).tolist()) | set(np.unique(val_ps).tolist()))
 print(f'  Horizons      : {PRED_STEPS_PRESENT}  (train '
       + ', '.join(f'k={k}:{int((train_ps == k).sum()):,}' for k in PRED_STEPS_PRESENT)
@@ -528,6 +591,19 @@ def const_velocity_pred(ctx, hstep):
     return last + (last - prev) * hstep.to(last.dtype)[:, None, None]
 
 
+def base_pred(ctx, hstep):
+    """The prediction the model's output is a correction TO -- i.e. what the scene looks
+    like when the network emits exactly zero.
+
+    Under TARGET_MODE='delta' that is the last observed frame (the naive baseline); under
+    'cv_residual' it is constant-velocity extrapolation. Every place that turns a model
+    output into a predicted geometry goes through here, so the two modes cannot drift
+    apart and no evaluation can accidentally reconstruct a prediction the wrong way."""
+    if TARGET_MODE == 'cv_residual':
+        return const_velocity_pred(ctx, hstep)
+    return ctx[:, -1]
+
+
 # ════════════════════════════════════════════════════════════════════
 # MODEL / OPTIMIZER / EMA SETUP + RESUME
 # ════════════════════════════════════════════════════════════════════
@@ -605,6 +681,11 @@ _arch_cfg = {
     # the resume path back such a checkpoint up and start from epoch 0 automatically,
     # rather than raising a state_dict load error.
     'MAX_PRED_STEP': MAX_PRED_STEP,
+    # Not an architecture key, but a checkpoint trained to predict the constant-velocity
+    # RESIDUAL means something entirely different from one trained to predict the raw
+    # displacement: loading one as the other silently reconstructs every prediction wrong.
+    # Listing it here makes switching modes retire the old checkpoint automatically.
+    'TARGET_MODE': TARGET_MODE,
 }
 _cfg = dict(_arch_cfg, DATA_SCALE=DATA_SCALE, LR=LR, TOTAL_EPOCHS=TOTAL_EPOCHS,
             BATCH_SIZE=BATCH_SIZE, MICRO_BATCH=MICRO_BATCH, MIN_SNR_GAMMA=MIN_SNR_GAMMA,
@@ -819,7 +900,8 @@ def evaluate_cd(m, indices=None, steps=FINAL_STEPS, n_samples=FINAL_SAMPLES,
             hstep = val_ps_t[sl]
 
             x0 = ddim_sample(m, ctx, hstep, steps=steps, eta=0.0, n_samples=n_samples)
-            pred = ctx[:, -1] + to_physical(x0, dnorm)
+            base = base_pred(ctx, hstep)
+            pred = base + to_physical(x0, dnorm)
             cd_b = chamfer_distance(pred, tgt)
             naive_b = chamfer_distance(ctx[:, -1], tgt)
             acc['cd'] += cd_b.item() * len(sl)
@@ -830,11 +912,11 @@ def evaluate_cd(m, indices=None, steps=FINAL_STEPS, n_samples=FINAL_SAMPLES,
                 # the conditional mean) visible instead of quietly optimised away.
                 x0_1 = ddim_sample(m, ctx, hstep, steps=steps, eta=0.0, n_samples=1)
                 acc['cd_single'] += chamfer_distance(
-                    ctx[:, -1] + to_physical(x0_1, dnorm), tgt).item() * len(sl)
+                    base + to_physical(x0_1, dnorm), tgt).item() * len(sl)
                 # One-forward-pass conditional-mean shortcut.
                 x0_m = predict_mean_oneshot(m, ctx, hstep)
                 acc['cd_mean1'] += chamfer_distance(
-                    ctx[:, -1] + to_physical(x0_m, dnorm), tgt).item() * len(sl)
+                    base + to_physical(x0_m, dnorm), tgt).item() * len(sl)
                 # Constant velocity -- the real bar (Module 4 QT7).
                 acc['cd_cv'] += chamfer_distance(
                     const_velocity_pred(ctx, hstep), tgt).item() * len(sl)
@@ -1098,7 +1180,7 @@ if val_cds:
         x0_scaled = ddim_sample(ema_model, diag_ctx, diag_h, steps=FINAL_STEPS, eta=1.0,
                                  generator=gen, n_samples=1)
         delta_phys = to_physical(x0_scaled, diag_dnorm)
-        samples.append(diag_ctx[:, -1] + delta_phys)
+        samples.append(base_pred(diag_ctx, diag_h) + delta_phys)
     samples = torch.stack(samples, 0)                      # (5, n_diag, N_A, 3)
     sample_std = samples.std(dim=0).mean().item()
     cds_of_samples = [chamfer_distance(samples[s], diag_tgt).item() for s in range(5)]
@@ -1127,7 +1209,7 @@ if val_cds:
         x0_st = ddim_sample(ema_model, diag_ctx, diag_h, steps=_st, eta=0.0,
                              n_samples=FINAL_SAMPLES)
         cd_by_steps[_st] = chamfer_distance(
-            diag_ctx[:, -1] + to_physical(x0_st, diag_dnorm), diag_tgt).item()
+            base_pred(diag_ctx, diag_h) + to_physical(x0_st, diag_dnorm), diag_tgt).item()
     print(f'\nQT4 — DDIM step count (EMA model, same {len(diag_idx)} windows, '
           f'{FINAL_SAMPLES}-sample mean, eta=0). Cheap here because the diagnostic set is '
           f'small; this is what justifies FINAL_STEPS={FINAL_STEPS} for the full-set QT2:')
@@ -1174,8 +1256,12 @@ if val_cds:
             _ctx, _tgt = val_inp_t[_sl], val_tgt_t[_sl]
             _dn, _h = val_dnorm_t[_sl], val_ps_t[_sl]
             _true = _tgt - _ctx[:, -1]
-            _pred = to_physical(ddim_sample(ema_model, _ctx, _h, steps=FINAL_STEPS,
-                                             eta=0.0, n_samples=FINAL_SAMPLES), _dn)
+            # Predicted DISPLACEMENT from the last observed frame, whatever the target mode:
+            # under 'cv_residual' the network's output is only the correction, so the
+            # constant-velocity part has to be added back before comparing with _true.
+            _pred = (base_pred(_ctx, _h) - _ctx[:, -1]
+                     + to_physical(ddim_sample(ema_model, _ctx, _h, steps=FINAL_STEPS,
+                                               eta=0.0, n_samples=FINAL_SAMPLES), _dn))
             _cv = const_velocity_pred(_ctx, _h) - _ctx[:, -1]
             _tn = _true.norm(dim=-1).clamp_min(1e-12)
             for _v, _acc in ((_pred, 'm'), (_cv, 'cv')):
