@@ -211,6 +211,16 @@ def to_physical(delta_scaled, dnorm, data_scale):
     return (delta_scaled / data_scale) / dnorm[:, None, None]
 
 
+def base_pred(ctx, hstep, target_mode):
+    """What the network's output is a correction to: the last observed frame under
+    target_mode='delta', constant-velocity extrapolation under 'cv_residual'. Read from the
+    checkpoint rather than assumed -- reconstructing a cv_residual model as a delta one
+    silently throws away the constant-velocity term and reports nonsense."""
+    if target_mode == 'cv_residual':
+        return const_velocity_pred(ctx, hstep)
+    return ctx[:, -1]
+
+
 def const_velocity_pred(ctx, hstep):
     """last + (last - previous) * horizon -- the reference bar from Module 4's QT7."""
     last, prev = ctx[:, -1], ctx[:, -2]
@@ -245,6 +255,7 @@ def load_checkpoint(ckpt_path):
         'model': model, 'T_diff': arch['T_DIFF'], 'alphas_cumprod': alphas_cumprod,
         'sqrt_ac': torch.sqrt(alphas_cumprod), 'sqrt_1m_ac': torch.sqrt(1.0 - alphas_cumprod),
         'data_scale': data_scale, 'epoch': ck.get('epoch', '?'),
+        'target_mode': arch.get('TARGET_MODE', 'delta'),
     }
 
 
@@ -260,7 +271,7 @@ def evaluate_full_set(bundle, steps, n_samples=1, eta=0.0):
                                  bundle['sqrt_1m_ac'], steps=steps, eta=eta,
                                  n_samples=n_samples)
         delta_phys = to_physical(x0_scaled, dnorm, bundle['data_scale'])
-        pred_pos = ctx[:, -1] + delta_phys
+        pred_pos = base_pred(ctx, hstep, bundle['target_mode']) + delta_phys
         cd = chamfer_distance(pred_pos, tgt)
         total_cd += cd.item() * len(ctx)
         n += len(ctx)
