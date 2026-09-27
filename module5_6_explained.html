@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 &amp; 6 Explained</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --paper:      #F7F8F7;
+    --surface:    #FFFFFF;
+    --sunken:     #EFF2F1;
+    --ink:        #141A1F;
+    --ink-soft:   #35434A;
+    --muted:      #5B6B72;
+    --rule:       #DCE3E3;
+    --rule-soft:  #E8EDEC;
+    --accent:     #1F6F6B;
+    --accent-dim: #E2EFED;
+    --gold:       #A97B10;
+    --gold-dim:   #F6EEDA;
+    --flow:       #9A3B2E;
+    --flow-dim:   #F5E7E4;
+
+    --f-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-body:    "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --f-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0F1417; --surface: #161D21; --sunken: #1B2429;
+      --ink: #E3E9E8; --ink-soft: #C2CDCC; --muted: #8B9C9F;
+      --rule: #2A363B; --rule-soft: #212B30;
+      --accent: #58AEA6; --accent-dim: #17312F;
+      --gold: #D9B45C; --gold-dim: #2E2716;
+      --flow: #D98B7C; --flow-dim: #2E1E1A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0F1417; --surface: #161D21; --sunken: #1B2429;
+    --ink: #E3E9E8; --ink-soft: #C2CDCC; --muted: #8B9C9F;
+    --rule: #2A363B; --rule-soft: #212B30;
+    --accent: #58AEA6; --accent-dim: #17312F;
+    --gold: #D9B45C; --gold-dim: #2E2716;
+    --flow: #D98B7C; --flow-dim: #2E1E1A;
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--f-body); font-size: 16.5px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+
+  .page { max-width: 62rem; margin: 0 auto; padding: 3.5rem 2rem 5rem; }
+  @media (max-width: 640px) { .page { padding: 2.5rem 1.1rem 3.5rem; } }
+
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.4rem; }
+  .eyebrow {
+    font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 600; color: var(--accent); margin: 0 0 0.85rem;
+  }
+  h1 {
+    font-family: var(--f-display); font-weight: 500;
+    font-size: clamp(2rem, 5vw, 2.8rem); line-height: 1.1;
+    letter-spacing: -0.015em; text-wrap: balance; margin: 0 0 0.55rem;
+  }
+  .standfirst {
+    font-family: var(--f-display); font-size: 1.12rem; line-height: 1.55;
+    color: var(--ink-soft); max-width: 58ch; margin: 0;
+  }
+
+  section { margin-top: 3rem; }
+  .sec-head {
+    display: flex; align-items: baseline; gap: 0.75rem;
+    border-top: 1px solid var(--rule); padding-top: 0.95rem; margin-bottom: 0.9rem;
+  }
+  .sec-head .num { font-family: var(--f-mono); font-size: 0.8rem; color: var(--accent); font-weight: 500; }
+  h2 {
+    font-family: var(--f-display); font-weight: 600; font-size: 1.5rem;
+    line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance;
+  }
+  p { margin: 0 0 1rem; max-width: 68ch; }
+  p:last-child { margin-bottom: 0; }
+  strong { font-weight: 600; }
+
+  .plain {
+    background: var(--accent-dim); border-left: 3px solid var(--accent);
+    padding: 0.9rem 1.1rem; margin: 1.1rem 0 0; border-radius: 0 3px 3px 0;
+  }
+  .plain p { margin: 0; max-width: 66ch; }
+  .plain .tag {
+    display: block; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent); margin-bottom: 0.3rem;
+  }
+
+  figure {
+    margin: 1.5rem 0 0; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; padding: 1.4rem 1.3rem 1.1rem; overflow-x: auto;
+  }
+  figure svg { display: block; width: 100%; min-width: 30rem; max-width: 100%; height: auto; }
+  figcaption {
+    margin-top: 1.1rem; padding-top: 0.8rem; border-top: 1px solid var(--rule-soft);
+    font-size: 0.85rem; line-height: 1.55; color: var(--muted); max-width: 74ch;
+  }
+  figcaption b { color: var(--ink-soft); font-weight: 600; }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 1.2rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  td:first-child { font-weight: 600; white-space: nowrap; color: var(--ink); }
+  td code { font-family: var(--f-mono); font-size: 0.85em; }
+
+  /* diagram vocabulary */
+  .dg { color: var(--ink); }
+  .dg .box  { fill: var(--surface); stroke: currentColor; stroke-width: 1.3; }
+  .dg .soft { fill: var(--sunken); stroke: var(--rule); stroke-width: 1; }
+  .dg .tint { fill: var(--accent-dim); stroke: var(--accent); stroke-width: 1.4; }
+  .dg .warm { fill: var(--flow-dim); stroke: var(--flow); stroke-width: 1.3; }
+  .dg .goldbox { fill: var(--gold-dim); stroke: var(--gold); stroke-width: 1.3; }
+  .dg text { font-family: var(--f-body); fill: currentColor; }
+  .dg .t-ttl  { font-size: 13.5px; font-weight: 600; }
+  .dg .t-sub  { font-size: 11.5px; fill: var(--muted); }
+  .dg .t-tag  { font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; fill: var(--accent); }
+  .dg .t-lane { font-size: 10px; font-weight: 700; letter-spacing: 0.11em; fill: var(--muted); }
+  .dg .edge { stroke: currentColor; stroke-width: 1.4; fill: none; }
+  .dg .thin { stroke: var(--rule); stroke-width: 1.2; fill: none; }
+  .dg .acc  { color: var(--accent); }
+  .dg .gld  { color: var(--gold); }
+  .dg .flw  { color: var(--flow); }
+  .mk-ink { fill: var(--ink); }
+  .mk-acc { fill: var(--accent); }
+  .mk-gld { fill: var(--gold); }
+  .mk-flw { fill: var(--flow); }
+
+  footer {
+    margin-top: 3.25rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">GASR · 4D Surgical Scene Reconstruction</p>
+    <h1>Module 5 &amp; 6 Explained</h1>
+    <p class="standfirst">What the prediction system does, what every part of it is for, and
+      what the technical words actually mean — written for a reader with no machine-learning
+      background.</p>
+  </header>
+
+  <!-- ─────────────── 1 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">1</span><h2>The whole thing in one line</h2></div>
+    <p>A surgeon's camera shows a flat video. Our system rebuilds the scene in 3D, follows
+      the tissue as it moves, and then tries to answer one question: <strong>where will this
+      tissue be a moment from now?</strong></p>
+
+    <figure>
+      <svg viewBox="0 0 960 250" class="dg" role="img"
+           aria-label="Five stages: a surgical video becomes a moving 3D scene, which becomes 512 tracked dots on the tissue, which train a predictor, which predicts where the tissue goes next.">
+        <defs>
+          <marker id="p1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+        </defs>
+        <rect class="box" x="8" y="40" width="165" height="74" rx="3"/>
+        <text class="t-tag" x="90" y="60" text-anchor="middle">MODULE 1</text>
+        <text class="t-ttl" x="90" y="83" text-anchor="middle">Surgical video</text>
+        <text class="t-sub" x="90" y="134" text-anchor="middle">One ordinary camera.</text>
+        <text class="t-sub" x="90" y="150" text-anchor="middle">No depth sensor,</text>
+        <text class="t-sub" x="90" y="166" text-anchor="middle">no second camera.</text>
+        <line class="edge" x1="177" y1="77" x2="197" y2="77" marker-end="url(#p1)"/>
+
+        <rect class="box" x="203" y="40" width="165" height="74" rx="3"/>
+        <text class="t-tag" x="285" y="60" text-anchor="middle">MODULE 2</text>
+        <text class="t-ttl" x="285" y="83" text-anchor="middle">A moving 3D scene</text>
+        <text class="t-sub" x="285" y="134" text-anchor="middle">The scene is rebuilt in</text>
+        <text class="t-sub" x="285" y="150" text-anchor="middle">3D for every frame, out</text>
+        <text class="t-sub" x="285" y="166" text-anchor="middle">of ~58,000 soft blobs.</text>
+        <line class="edge" x1="372" y1="77" x2="392" y2="77" marker-end="url(#p1)"/>
+
+        <rect class="box" x="398" y="40" width="165" height="74" rx="3"/>
+        <text class="t-tag" x="480" y="60" text-anchor="middle">MODULES 3–4</text>
+        <text class="t-ttl" x="480" y="83" text-anchor="middle">512 tracked dots</text>
+        <text class="t-sub" x="480" y="134" text-anchor="middle">We follow the same 512</text>
+        <text class="t-sub" x="480" y="150" text-anchor="middle">spots on the tissue —</text>
+        <text class="t-sub" x="480" y="166" text-anchor="middle">like numbered stickers.</text>
+        <line class="edge" x1="567" y1="77" x2="587" y2="77" marker-end="url(#p1)"/>
+
+        <g class="acc">
+          <rect class="tint" x="593" y="40" width="165" height="74" rx="3"/>
+          <text class="t-tag" x="675" y="60" text-anchor="middle">MODULE 5</text>
+          <text class="t-ttl" x="675" y="83" text-anchor="middle">The predictor</text>
+        </g>
+        <text class="t-sub" x="675" y="134" text-anchor="middle">Learns, by watching,</text>
+        <text class="t-sub" x="675" y="150" text-anchor="middle">how those dots tend</text>
+        <text class="t-sub" x="675" y="166" text-anchor="middle">to move.</text>
+        <line class="edge" x1="762" y1="77" x2="782" y2="77" marker-end="url(#p1)"/>
+
+        <g class="acc">
+          <rect class="tint" x="788" y="40" width="165" height="74" rx="3"/>
+          <text class="t-tag" x="870" y="60" text-anchor="middle">MODULE 6</text>
+          <text class="t-ttl" x="870" y="83" text-anchor="middle">The prediction</text>
+        </g>
+        <text class="t-sub" x="870" y="134" text-anchor="middle">Uses the trained</text>
+        <text class="t-sub" x="870" y="150" text-anchor="middle">predictor, and checks</text>
+        <text class="t-sub" x="870" y="166" text-anchor="middle">honestly how good it is.</text>
+
+        <line class="thin" x1="8" y1="200" x2="952" y2="200"/>
+        <text class="t-lane" x="8" y="222">ALREADY WORKING — 30 dB, LOOKS LIKE THE REAL VIDEO</text>
+        <text class="t-lane" x="593" y="222">THE NEW, HARD PART</text>
+      </svg>
+      <figcaption><b>Figure 1 — the pipeline.</b> Everything to the left of Module 5 is
+        reconstruction: describing what already happened. Module 5 and 6 are prediction:
+        guessing what happens next. Those are very different problems, and only the second
+        one is still unsolved here.</figcaption>
+    </figure>
+
+    <div class="plain">
+      <span class="tag">In plain English</span>
+      <p>Think of 512 numbered stickers stuck to the tissue. We can see where every sticker
+        was in each past frame. The predictor's job is to say where each sticker moves
+        next.</p>
+    </div>
+  </section>
+
+  <!-- ─────────────── 2 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">2</span><h2>What the predictor is given, and what it hands back</h2></div>
+    <p>Before any of the internal machinery matters, it helps to see the outside of the box:
+      three things go in, one comes out.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 330" class="dg" role="img"
+           aria-label="Three inputs feed the predictor: the last four snapshots of all 512 dots, how far ahead to predict, and a patch of random noise. One output comes back: how far each dot moves next.">
+        <defs>
+          <marker id="p2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+        </defs>
+        <text class="t-lane" x="20" y="24">GOES IN</text>
+        <text class="t-lane" x="620" y="24">COMES OUT</text>
+
+        <rect class="soft" x="20" y="38" width="265" height="62" rx="3"/>
+        <text class="t-ttl" x="36" y="62">The last 4 snapshots</text>
+        <text class="t-sub" x="36" y="82">where all 512 dots were, frame by frame</text>
+        <path class="edge" d="M285,69 H320 V150" marker-end="url(#p2)"/>
+
+        <rect class="soft" x="20" y="126" width="265" height="62" rx="3"/>
+        <text class="t-ttl" x="36" y="150">How far ahead to look</text>
+        <text class="t-sub" x="36" y="170">1, 2 or 3 frames — we have to say which</text>
+        <line class="edge" x1="285" y1="157" x2="333" y2="157" marker-end="url(#p2)"/>
+
+        <rect class="soft" x="20" y="214" width="265" height="62" rx="3"/>
+        <text class="t-ttl" x="36" y="238">A patch of random noise</text>
+        <text class="t-sub" x="36" y="258">the raw material it sculpts into an answer</text>
+        <path class="edge" d="M285,245 H320 V166" marker-end="url(#p2)"/>
+
+        <g class="acc">
+          <rect class="tint" x="340" y="118" width="215" height="80" rx="3"/>
+          <text class="t-ttl" x="447" y="150" text-anchor="middle">The predictor</text>
+          <text class="t-sub" x="447" y="172" text-anchor="middle">a trained neural network</text>
+        </g>
+        <line class="edge" x1="555" y1="158" x2="608" y2="158" marker-end="url(#p2)"/>
+
+        <rect class="goldbox" x="615" y="126" width="265" height="62" rx="3"/>
+        <text class="t-ttl" x="631" y="150">How far each dot moves</text>
+        <text class="t-sub" x="631" y="170">512 small arrows — one per dot</text>
+
+        <text class="t-sub" x="20" y="308">The movement is tiny: about one or two pixels on screen per frame.</text>
+        <text class="t-sub" x="20" y="324">That smallness is the central difficulty of this whole project.</text>
+      </svg>
+      <figcaption><b>Figure 2 — inputs and output.</b> The random noise is not a mistake. The
+        predictor is a <em>generative</em> model: it does not compute one answer directly, it
+        shapes a random starting point into a believable one. Figure 3 shows how.</figcaption>
+    </figure>
+
+    <div class="plain">
+      <span class="tag">Why it must be told how far ahead</span>
+      <p>The same four snapshots appear in training three separate times — once paired with
+        what happened 1 frame later, once with 2, once with 3. Without being told which one
+        we want, the question has three different correct answers and the model cannot win.
+        Adding that one number was a real fix, not a detail.</p>
+    </div>
+  </section>
+
+  <!-- ─────────────── 3 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">3</span><h2>How it builds an answer: sculpting from static</h2></div>
+    <p>This is the part called <em>diffusion</em>, and it is the least intuitive idea here.
+      The model never writes an answer down in one go. It starts from pure random static and
+      cleans it up, roughly twenty times over, each pass asking the same question: <em>does
+      this motion fit the four frames I was shown?</em></p>
+
+    <figure>
+      <svg viewBox="0 0 940 300" class="dg" role="img"
+           aria-label="Four panels showing the denoising process. In the first, arrows point in random directions. Over successive panels they become more aligned, until in the last they nearly all point the same way, forming the predicted motion.">
+        <defs>
+          <marker id="p3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+          <marker id="p3s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+        </defs>
+        <text class="t-lane" x="20" y="26">EVERY PASS ASKS: DOES THIS MOTION FIT THE FRAMES I JUST SAW?</text>
+
+        <rect class="soft" x="20" y="42" width="200" height="150" rx="3"/>
+        <line class="edge" x1="55" y1="77" x2="67" y2="69" marker-end="url(#p3s)"/>
+        <line class="edge" x1="120" y1="72" x2="110" y2="82" marker-end="url(#p3s)"/>
+        <line class="edge" x1="180" y1="87" x2="186" y2="99" marker-end="url(#p3s)"/>
+        <line class="edge" x1="65" y1="127" x2="53" y2="121" marker-end="url(#p3s)"/>
+        <line class="edge" x1="125" y1="122" x2="135" y2="126" marker-end="url(#p3s)"/>
+        <line class="edge" x1="185" y1="132" x2="181" y2="120" marker-end="url(#p3s)"/>
+        <line class="edge" x1="80" y1="162" x2="88" y2="171" marker-end="url(#p3s)"/>
+        <line class="edge" x1="140" y1="160" x2="131" y2="167" marker-end="url(#p3s)"/>
+        <text class="t-ttl" x="120" y="216" text-anchor="middle">Pass 1</text>
+        <text class="t-sub" x="120" y="234" text-anchor="middle">random static —</text>
+        <text class="t-sub" x="120" y="250" text-anchor="middle">every dot points anywhere</text>
+        <line class="edge" x1="228" y1="117" x2="252" y2="117" marker-end="url(#p3)"/>
+
+        <rect class="soft" x="260" y="42" width="200" height="150" rx="3"/>
+        <line class="edge" x1="295" y1="77" x2="305" y2="83" marker-end="url(#p3s)"/>
+        <line class="edge" x1="360" y1="72" x2="354" y2="82" marker-end="url(#p3s)"/>
+        <line class="edge" x1="420" y1="87" x2="429" y2="94" marker-end="url(#p3s)"/>
+        <line class="edge" x1="305" y1="127" x2="296" y2="129" marker-end="url(#p3s)"/>
+        <line class="edge" x1="365" y1="122" x2="375" y2="127" marker-end="url(#p3s)"/>
+        <line class="edge" x1="425" y1="132" x2="427" y2="122" marker-end="url(#p3s)"/>
+        <line class="edge" x1="320" y1="162" x2="329" y2="168" marker-end="url(#p3s)"/>
+        <line class="edge" x1="380" y1="160" x2="375" y2="169" marker-end="url(#p3s)"/>
+        <text class="t-ttl" x="360" y="216" text-anchor="middle">Pass 7</text>
+        <text class="t-sub" x="360" y="234" text-anchor="middle">some agreement</text>
+        <text class="t-sub" x="360" y="250" text-anchor="middle">starting to appear</text>
+        <line class="edge" x1="468" y1="117" x2="492" y2="117" marker-end="url(#p3)"/>
+
+        <rect class="soft" x="500" y="42" width="200" height="150" rx="3"/>
+        <line class="edge" x1="535" y1="77" x2="545" y2="83" marker-end="url(#p3s)"/>
+        <line class="edge" x1="600" y1="72" x2="606" y2="81" marker-end="url(#p3s)"/>
+        <line class="edge" x1="660" y1="87" x2="670" y2="93" marker-end="url(#p3s)"/>
+        <line class="edge" x1="545" y1="127" x2="553" y2="135" marker-end="url(#p3s)"/>
+        <line class="edge" x1="605" y1="122" x2="615" y2="128" marker-end="url(#p3s)"/>
+        <line class="edge" x1="665" y1="132" x2="673" y2="136" marker-end="url(#p3s)"/>
+        <line class="edge" x1="560" y1="162" x2="570" y2="168" marker-end="url(#p3s)"/>
+        <line class="edge" x1="620" y1="160" x2="626" y2="167" marker-end="url(#p3s)"/>
+        <text class="t-ttl" x="600" y="216" text-anchor="middle">Pass 14</text>
+        <text class="t-sub" x="600" y="234" text-anchor="middle">most of the noise</text>
+        <text class="t-sub" x="600" y="250" text-anchor="middle">has been cleaned away</text>
+        <line class="edge" x1="708" y1="117" x2="732" y2="117" marker-end="url(#p3)"/>
+
+        <g class="gld">
+          <rect class="goldbox" x="740" y="42" width="180" height="150" rx="3"/>
+          <line class="edge" x1="775" y1="77" x2="786" y2="83" marker-end="url(#p3s)"/>
+          <line class="edge" x1="830" y1="72" x2="840" y2="79" marker-end="url(#p3s)"/>
+          <line class="edge" x1="880" y1="87" x2="891" y2="93" marker-end="url(#p3s)"/>
+          <line class="edge" x1="785" y1="127" x2="796" y2="133" marker-end="url(#p3s)"/>
+          <line class="edge" x1="840" y1="122" x2="851" y2="128" marker-end="url(#p3s)"/>
+          <line class="edge" x1="885" y1="132" x2="895" y2="139" marker-end="url(#p3s)"/>
+          <line class="edge" x1="795" y1="162" x2="806" y2="169" marker-end="url(#p3s)"/>
+          <line class="edge" x1="845" y1="160" x2="856" y2="166" marker-end="url(#p3s)"/>
+        </g>
+        <text class="t-ttl" x="830" y="216" text-anchor="middle">Pass 20</text>
+        <text class="t-sub" x="830" y="234" text-anchor="middle">the prediction:</text>
+        <text class="t-sub" x="830" y="250" text-anchor="middle">a sensible, shared motion</text>
+
+        <text class="t-sub" x="20" y="286">Ask twice with different starting static and you get two slightly different answers — which is how the system produces several possible futures.</text>
+      </svg>
+      <figcaption><b>Figure 3 — denoising.</b> The technical name for this is a diffusion
+        model, the same family of method behind AI image generators. The useful consequence
+        for surgery is the last line: because it starts from randomness, asking repeatedly
+        gives a <em>range</em> of plausible futures rather than one confident guess, and how
+        widely those answers disagree is a measure of how unsure the system is.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────── 4 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">4</span><h2>The change that matters most: only predict the surprise</h2></div>
+    <p>This is the newest and most important design decision, and it needs no mathematics to
+      understand.</p>
+    <p>There are two dumb ways to guess where a dot goes, and both are useful as yardsticks.
+      <strong>Guess A: it stops.</strong> <strong>Guess B: it keeps going exactly as it has
+      been.</strong> Guess B is a decent predictor of tissue — it is right about 30–57% more
+      often than Guess A.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 330" class="dg" role="img"
+           aria-label="One dot's path. Past positions curve upward. Guess A keeps it where it is. Guess B continues it in a straight line and lands close to the truth. The remaining short gap between guess B and the true position is what the model now has to predict, instead of the whole movement.">
+        <defs>
+          <marker id="p4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+          <marker id="p4f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-flw"/>
+          </marker>
+          <marker id="p4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-acc"/>
+          </marker>
+        </defs>
+        <text class="t-lane" x="30" y="26">WHERE ONE DOT HAS BEEN, AND WHERE IT GOES NEXT</text>
+
+        <path class="thin" d="M110,236 Q180,220 250,196 T390,150"/>
+        <circle class="soft" cx="110" cy="236" r="6"/>
+        <circle class="soft" cx="250" cy="196" r="6"/>
+        <circle class="box" cx="390" cy="150" r="7"/>
+        <text class="t-sub" x="110" y="264" text-anchor="middle">3 frames ago</text>
+        <text class="t-sub" x="250" y="264" text-anchor="middle">2 frames ago</text>
+        <text class="t-ttl" x="390" y="128" text-anchor="middle">now</text>
+
+        <circle class="soft" cx="390" cy="150" r="14" fill="none"/>
+        <text class="t-sub" x="404" y="188">Guess A — “it stops”: stay right here</text>
+
+        <line class="edge" x1="398" y1="146" x2="556" y2="96" stroke-dasharray="6 4" marker-end="url(#p4)"/>
+        <circle class="box" cx="560" cy="94" r="7"/>
+        <text class="t-sub" x="470" y="78" text-anchor="middle">Guess B — “it carries on”</text>
+
+        <g class="gld">
+          <path class="edge" d="M604,126 l-12,-6 l12,-6 l-3,6 z" fill="var(--gold)" stroke="none"/>
+          <circle cx="600" cy="120" r="8" fill="var(--gold-dim)" stroke="var(--gold)" stroke-width="1.6"/>
+        </g>
+        <text class="t-ttl" x="618" y="112">where it actually went</text>
+
+        <g class="flw">
+          <line class="edge" x1="566" y1="98" x2="590" y2="114" marker-end="url(#p4f)"/>
+        </g>
+        <text class="t-sub" x="540" y="150">the small gap Guess B got wrong</text>
+
+        <line class="thin" x1="30" y1="216" x2="870" y2="216" stroke-dasharray="2 5"/>
+
+        <g class="flw">
+          <rect class="warm" x="30" y="236" width="400" height="74" rx="3"/>
+        </g>
+        <text class="t-ttl" x="46" y="262">Before: predict the whole movement</text>
+        <text class="t-sub" x="46" y="282">If the model gave up and said “no movement”,</text>
+        <text class="t-sub" x="46" y="298">it scored the same as Guess A — the weaker yardstick.</text>
+
+        <g class="acc">
+          <rect class="tint" x="465" y="236" width="405" height="74" rx="3"/>
+        </g>
+        <text class="t-ttl" x="481" y="262">Now: predict only the gap</text>
+        <text class="t-sub" x="481" y="282">If it gives up now, it scores the same as Guess B —</text>
+        <text class="t-sub" x="481" y="298">the stronger yardstick. Its worst case just got better.</text>
+      </svg>
+      <figcaption><b>Figure 4 — predicting the correction instead of the movement.</b> The
+        model used to be asked for the entire arrow from "now" to the truth. It is now asked
+        only for the short red gap that straight-line continuation gets wrong. Two things
+        improve at once: the job is smaller, and the fallback when it fails is a better
+        guess than before.</figcaption>
+    </figure>
+
+    <div class="plain">
+      <span class="tag">The everyday version</span>
+      <p>A sat-nav that assumes you keep driving straight is right most of the time. Rather
+        than predict your whole route from scratch, it is far easier — and far safer when it
+        is unsure — to only predict the turns.</p>
+    </div>
+  </section>
+
+  <!-- ─────────────── 5 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">5</span><h2>Module 6: three ways to ask, and two honest yardsticks</h2></div>
+    <p>Module 6 does not train anything. It takes the trained predictor and uses it, then
+      grades the answers against guesses so simple that beating them should be easy.</p>
+
+    <figure>
+      <svg viewBox="0 0 920 400" class="dg" role="img"
+           aria-label="The trained predictor is used three ways: asked once for a short prediction, asked repeatedly to reach further ahead, and asked five times for five possible futures. All answers are compared against two simple yardsticks: nothing moves, and everything continues straight.">
+        <defs>
+          <marker id="p5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+        </defs>
+        <g class="acc">
+          <rect class="tint" x="350" y="20" width="220" height="62" rx="3"/>
+          <text class="t-ttl" x="460" y="46" text-anchor="middle">The trained predictor</text>
+          <text class="t-sub" x="460" y="66" text-anchor="middle">used, not retrained</text>
+        </g>
+        <path class="edge" d="M460,82 V110 H150 V142" marker-end="url(#p5)"/>
+        <path class="edge" d="M460,82 V142" marker-end="url(#p5)"/>
+        <path class="edge" d="M460,82 V110 H775 V142" marker-end="url(#p5)"/>
+
+        <rect class="box" x="20" y="148" width="260" height="106" rx="3"/>
+        <text class="t-ttl" x="36" y="174">Ask once</text>
+        <text class="t-sub" x="36" y="196">“Where will it be 1, 2 or 3</text>
+        <text class="t-sub" x="36" y="212">frames from now?”</text>
+        <text class="t-sub" x="36" y="236">The most reliable way to ask.</text>
+
+        <rect class="box" x="330" y="148" width="260" height="106" rx="3"/>
+        <text class="t-ttl" x="346" y="174">Ask again and again</text>
+        <text class="t-sub" x="346" y="196">Feed each answer back in to</text>
+        <text class="t-sub" x="346" y="212">reach 10 frames ahead.</text>
+        <text class="t-sub" x="346" y="236">Mistakes pile up as you go.</text>
+
+        <rect class="box" x="645" y="148" width="260" height="106" rx="3"/>
+        <text class="t-ttl" x="661" y="174">Ask five times</text>
+        <text class="t-sub" x="661" y="196">Five possible futures. How</text>
+        <text class="t-sub" x="661" y="212">much they disagree is a</text>
+        <text class="t-sub" x="661" y="236">measure of confidence.</text>
+
+        <path class="edge" d="M150,254 V292" marker-end="url(#p5)"/>
+        <path class="edge" d="M460,254 V292" marker-end="url(#p5)"/>
+        <path class="edge" d="M775,254 V292" marker-end="url(#p5)"/>
+
+        <rect class="soft" x="20" y="298" width="885" height="82" rx="3"/>
+        <text class="t-ttl" x="40" y="324">Every answer is graded against two deliberately simple yardsticks</text>
+        <text class="t-sub" x="40" y="348">“Nothing moves at all.”  ·  “Everything keeps going exactly as it was.”</text>
+        <text class="t-sub" x="40" y="368">If a 16-million-number model cannot beat those, we say so rather than hide it.</text>
+      </svg>
+      <figcaption><b>Figure 5 — how the prediction is used and judged.</b> The two yardsticks
+        are the heart of the evaluation. They cost nothing to compute and need no learning at
+        all, so they are the fairest possible test of whether the complicated model is
+        actually earning its place.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────── 6 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">6</span><h2>What we found, and the fix it pointed to</h2></div>
+    <p>Measuring the predicted movement against the real one separated two very different
+      failures. The model points the <em>right way</em> but moves the dots the <em>wrong
+      distance</em>. Direction is the hard part and it has some of it; distance is easy to
+      correct.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 230" class="dg" role="img"
+           aria-label="The true movement is a short arrow. The model's predicted movement points the same way but is much too long. Multiplying it by a single number shrinks it to match.">
+        <defs>
+          <marker id="p6g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-gld"/>
+          </marker>
+          <marker id="p6f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-flw"/>
+          </marker>
+          <marker id="p6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+        </defs>
+        <text class="t-sub" x="30" y="56" >What actually happens</text>
+        <g class="gld"><line class="edge" x1="230" y1="50" x2="330" y2="50" stroke-width="2.4" marker-end="url(#p6g)"/></g>
+
+        <text class="t-sub" x="30" y="106">What the model says</text>
+        <g class="flw"><line class="edge" x1="230" y1="100" x2="430" y2="100" stroke-width="2.4" marker-end="url(#p6f)"/></g>
+        <text class="t-sub" x="440" y="104">right direction, roughly twice too far</text>
+
+        <line class="edge" x1="480" y1="75" x2="530" y2="75" marker-end="url(#p6)"/>
+        <rect class="box" x="536" y="54" width="120" height="42" rx="3"/>
+        <text class="t-ttl" x="596" y="80" text-anchor="middle">× one number</text>
+
+        <text class="t-sub" x="30" y="166">After correcting the size</text>
+        <g class="flw"><line class="edge" x1="230" y1="160" x2="330" y2="160" stroke-width="2.4" marker-end="url(#p6f)"/></g>
+        <g class="gld"><line class="edge" x1="230" y1="160" x2="330" y2="160" stroke-width="2.4" stroke-dasharray="5 4" marker-end="url(#p6g)"/></g>
+        <text class="t-sub" x="345" y="164">now it lands where the tissue actually went</text>
+
+        <line class="thin" x1="30" y1="192" x2="870" y2="192"/>
+        <text class="t-sub" x="30" y="216">That single number is worked out from the training footage only — never from the frames we test on, which would be marking our own homework.</text>
+      </svg>
+      <figcaption><b>Figure 6 — calibration.</b> One number per prediction distance, measured
+        on training footage and then applied at prediction time. It is not a trick: if the
+        direction is even slightly better than random, correcting the size is guaranteed to
+        beat the "nothing moves" yardstick. It also costs no retraining.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────── 7 ─────────────── -->
+  <section>
+    <div class="sec-head"><span class="num">7</span><h2>The jargon, translated</h2></div>
+    <table>
+      <thead><tr><th>Term you will hear</th><th>What it actually means</th></tr></thead>
+      <tbody>
+        <tr><td>Gaussian splat</td><td>A small soft blob of colour in 3D. Pile up ~58,000 of them and you have a scene that can be viewed from any angle.</td></tr>
+        <tr><td>Anchor points</td><td>The 512 dots we follow. A manageable sample of the tissue rather than all 58,000 blobs.</td></tr>
+        <tr><td>Diffusion model</td><td>A generator that starts from random static and repeatedly cleans it up into a sensible answer. Same idea as AI image generators.</td></tr>
+        <tr><td>Denoising step</td><td>One pass of that cleaning up. We use 20 of them.</td></tr>
+        <tr><td>Horizon</td><td>How far ahead we are asking: 1, 2 or 3 frames.</td></tr>
+        <tr><td>Chamfer Distance</td><td>The score. How far, on average, the predicted dots sit from where the tissue really went. Lower is better.</td></tr>
+        <tr><td>Naive baseline</td><td>The "nothing moves" yardstick.</td></tr>
+        <tr><td>Constant velocity</td><td>The "everything keeps going straight" yardstick. Considerably better than naive on real tissue.</td></tr>
+        <tr><td>Residual</td><td>The leftover bit. Here: the part of the movement that going straight fails to explain.</td></tr>
+        <tr><td>Rollout</td><td>Asking repeatedly, feeding each answer back in, to reach further ahead than the model was trained for.</td></tr>
+        <tr><td>Overfitting</td><td>Memorising the practice footage instead of learning the pattern, so results on new footage get worse even as training looks better.</td></tr>
+        <tr><td>Held-out frames</td><td>Footage deliberately kept back from training, used only for marking. Without it we would be grading the model on its own revision notes.</td></tr>
+        <tr><td>Calibration</td><td>Correcting the size of a prediction that already points the right way.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    <p>GASR — 4D Surgical Scene Reconstruction &amp; Deformation Prediction ·
+      FAST NUCES Islamabad · Supervised by Dr Akhtar Jamil.
+      Plain-language companion to <code>module5_6_architecture.html</code> (the technical
+      diagrams) and <code>module5_technical_note.html</code>.</p>
+  </footer>
+
+</div>
+</body>
+</html>
