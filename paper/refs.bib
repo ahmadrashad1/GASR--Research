@@ -1,0 +1,145 @@
+% ============================================================================
+% References for: Predicting Future Tissue Geometry from Monocular
+%                 Laparoscopic Video
+%
+% VERIFY BEFORE SUBMISSION. arXiv identifiers and author lists below were taken
+% from the papers' listing pages, but page numbers and some published venues
+% should be confirmed against the official proceedings. Entries marked
+% NEEDS-CHECK have a detail the author could not confirm.
+% ============================================================================
+
+% ---------- Reconstruction: radiance fields and Gaussian splatting ----------
+@article{kerbl2023gaussian,
+  title   = {3{D} {G}aussian Splatting for Real-Time Radiance Field Rendering},
+  author  = {Kerbl, Bernhard and Kopanas, Georgios and Leimk{\"u}hler, Thomas and Drettakis, George},
+  journal = {ACM Transactions on Graphics},
+  volume  = {42}, number = {4}, year = {2023},
+  note    = {arXiv:2308.04079}
+}
+
+@inproceedings{wang2022endonerf,
+  title     = {Neural Rendering for Stereo 3{D} Reconstruction of Deformable Tissues in Robotic Surgery},
+  author    = {Wang, Yuehao and Long, Yonghao and Fan, Siu Hin and Dou, Qi},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  year      = {2022},
+  note      = {arXiv:2206.15255}
+}
+
+@inproceedings{ruan2023lerplane,
+  title     = {{L}er{P}lane: Neural Representations for Fast 4{D} Reconstruction of Deformable Tissues},
+  author    = {Yang, Chen and Wang, Kailing and Wang, Yuehao and Yang, Xiaokang and Shen, Wei},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  year      = {2023},
+  note      = {arXiv:2305.19906}
+}
+
+@article{liu2024endogaussian,
+  title   = {{E}ndo{G}aussian: Real-time {G}aussian Splatting for Dynamic Endoscopic Scene Reconstruction},
+  author  = {Liu, Yifan and Li, Chenxin and Yang, Chen and Yuan, Yixuan},
+  journal = {arXiv preprint arXiv:2401.12561},
+  year    = {2024}
+}
+
+@inproceedings{yang2024depthanythingv2,
+  title     = {Depth Anything {V2}},
+  author    = {Yang, Lihe and Kang, Bingyi and Huang, Zilong and Zhao, Zhen and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2024},
+  note      = {arXiv:2406.09414}
+}
+
+% ---------- Point-cloud sequence prediction: the comparison baselines ----------
+@article{fan2019pointrnn,
+  title   = {{P}oint{RNN}: Point Recurrent Neural Network for Moving Point Cloud Processing},
+  author  = {Fan, Hehe and Yang, Yi},
+  journal = {arXiv preprint arXiv:1910.08287},
+  year    = {2019}
+}
+
+@article{lu2021monet,
+  title   = {{M}o{N}et: Motion-based Point Cloud Prediction Network},
+  author  = {Lu, Fan and Chen, Guang and Li, Zhijun and Zhang, Lijun and Liu, Yinlong and Qu, Sanqing and Knoll, Alois},
+  journal = {arXiv preprint arXiv:2011.10812},
+  year    = {2021},
+  note    = {NEEDS-CHECK: published venue (IEEE T-ITS)}
+}
+
+@article{luo2023pcpnet,
+  title   = {{PCPN}et: An Efficient and Semantic-Enhanced Transformer Network for Point Cloud Prediction},
+  author  = {Luo, Zhen and Ma, Junyi and Zhou, Zijie and Xiong, Guangming},
+  journal = {arXiv preprint arXiv:2304.07773},
+  year    = {2023}
+}
+
+@article{mersch2021selfsupervised,
+  title   = {Self-supervised Point Cloud Prediction Using 3{D} Spatio-temporal Convolutional Networks},
+  author  = {Mersch, Benedikt and Chen, Xieyuanli and Behley, Jens and Stachniss, Cyrill},
+  journal = {Conference on Robot Learning (CoRL)},
+  year    = {2021},
+  note    = {arXiv:2110.04076}
+}
+
+@inproceedings{fan2017pointset,
+  title     = {A Point Set Generation Network for 3{D} Object Reconstruction from a Single Image},
+  author    = {Fan, Haoqiang and Su, Hao and Guibas, Leonidas},
+  booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2017},
+  note      = {arXiv:1612.00603; origin of the Chamfer Distance metric used here}
+}
+
+% ---------- Diffusion models ----------
+@inproceedings{ho2020ddpm,
+  title     = {Denoising Diffusion Probabilistic Models},
+  author    = {Ho, Jonathan and Jain, Ajay and Abbeel, Pieter},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2020},
+  note      = {arXiv:2006.11239}
+}
+
+@inproceedings{song2021ddim,
+  title     = {Denoising Diffusion Implicit Models},
+  author    = {Song, Jiaming and Meng, Chenlin and Ermon, Stefano},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021},
+  note      = {arXiv:2010.02502}
+}
+
+@inproceedings{nichol2021improved,
+  title     = {Improved Denoising Diffusion Probabilistic Models},
+  author    = {Nichol, Alexander Quinn and Dhariwal, Prafulla},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2021},
+  note      = {arXiv:2102.09672; cosine noise schedule}
+}
+
+@inproceedings{salimans2022progressive,
+  title     = {Progressive Distillation for Fast Sampling of Diffusion Models},
+  author    = {Salimans, Tim and Ho, Jonathan},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2022},
+  note      = {arXiv:2202.00512; origin of the v-prediction parameterisation}
+}
+
+@inproceedings{hang2023minsnr,
+  title     = {Efficient Diffusion Training via {M}in-{SNR} Weighting Strategy},
+  author    = {Hang, Tiankai and Gu, Shuyang and Li, Chen and Bao, Jianmin and Chen, Dong and Hu, Han and Geng, Xin and Guo, Baining},
+  booktitle = {IEEE/CVF International Conference on Computer Vision (ICCV)},
+  year      = {2023},
+  note      = {arXiv:2303.09556}
+}
+
+% ---------- Diffusion for forecasting ----------
+@inproceedings{mao2023leapfrog,
+  title     = {Leapfrog Diffusion Model for Stochastic Trajectory Prediction},
+  author    = {Mao, Weibo and Xu, Chenxin and Zhu, Qi and Chen, Siheng and Wang, Yanfeng},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2023},
+  note      = {arXiv:2303.10895}
+}
+
+@inproceedings{bae2024singulartrajectory,
+  title     = {{S}ingular{T}rajectory: Universal Trajectory Predictor Using Diffusion Model},
+  author    = {Bae, Inhwan and Park, Young-Jae and Jeon, Hae-Gon},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2024}
+}

@@ -18,3 +18,13 @@ fyp-1/report/node_modules/
 
 # LibreOffice lock files (created while a .docx is open)
 .~lock.*#
+
+# LaTeX build artefacts and auto-generated tables (regenerate with make_tables.py)
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.pdf
+paper/generated_macros.tex
+paper/generated_tables.tex
