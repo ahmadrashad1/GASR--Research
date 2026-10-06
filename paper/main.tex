@@ -1,22 +1,20 @@
 % ============================================================================
-% IEEE conference format. For Springer LNCS instead, replace the documentclass
-% and package block with \documentclass{llncs} and drop the IEEEtran-specific
-% commands marked below; the body needs no other change.
+% IEEE conference format. For Springer LNCS, swap the documentclass block for
+% \documentclass{llncs}, drop \IEEEoverridecommandlockouts and the
+% IEEEauthorblock wrappers, and set the bibliography style to splncs04.
 %
-% Numbers, tables and the macros used in the prose come from generated.tex,
-% which make_tables.py produces from the modules' own JSON output. Do not type
-% a result into this file -- if it is not in generated.tex, it is not measured.
+% All measured numbers come from generated_macros.tex / generated_tables.tex,
+% which make_tables.py produces from the pipeline's own JSON output. Do not type
+% a result into this file: if it is not in those files, it is not measured.
 %
-% Build:  python3 make_tables.py --drive /path/to/EndoGaussian
-%         pdflatex main && bibtex main && pdflatex main && pdflatex main
+% Build:  ./build.sh /path/to/EndoGaussian
 % ============================================================================
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 
-% IEEEtran expects Times. pdflatex (Overleaf's default) resolves that itself; under a
-% Unicode engine such as tectonic the ptm shapes are undefined and the text falls back to
-% Latin Modern, so the Times-metric clone that ships with TeX Live is requested explicitly.
-% Harmless under pdflatex, which skips this branch.
+% IEEEtran expects Times. pdflatex resolves that itself; a Unicode engine does
+% not, and silently falls back to Latin Modern, so the Times-metric clone that
+% ships with TeX Live is requested explicitly under XeTeX only.
 \usepackage{iftex}
 \ifXeTeX
   \usepackage{fontspec}
@@ -28,15 +26,16 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 
-\input{generated_macros}   % auto-generated \newcommand macros (numbers in the prose)
+\input{generated_macros}
 
 \begin{document}
 
-\title{Predicting Future Tissue Geometry from Monocular Laparoscopic Video\\
-{\footnotesize A self-supervised 4D reconstruction and diffusion-based prediction pipeline}}
+\title{From Reconstruction to Anticipation: Self-Supervised Prediction of
+Future Tissue Geometry in Monocular Laparoscopic Video}
 
 \author{
 \IEEEauthorblockN{Ahmad Rashad, Shehroz, Humair, and Akhtar Jamil}
@@ -49,262 +48,427 @@ Islamabad, Pakistan}
 
 % ============================================================================
 \begin{abstract}
-Laparoscopic surgery is performed through a monocular camera that provides neither depth
-nor any indication of how soft tissue is about to deform. Recent work reconstructs
-endoscopic scenes in four dimensions with high fidelity, but every such system is
-retrospective: it models deformation that has already occurred and cannot anticipate
-deformation that has not. We present a pipeline that adds prediction to reconstruction.
-Monocular video is reconstructed as a deformable Gaussian scene, a time-consistent
-geometric trajectory of \numAnchors{} tracked tissue points is extracted, and that
-trajectory is converted into a self-supervised dataset of \numTrainWindows{} training
-windows without any clinical annotation. A conditional denoising diffusion model, trained
-on that dataset and conditioned on both the observed geometry and the requested prediction
-horizon, produces future geometry together with a distribution over plausible outcomes.
-We evaluate against classical motion estimators and against published point-cloud
-prediction methods under a single protocol, and we report two complementary metrics:
-Chamfer Distance, as used in the point-cloud prediction literature, and a stricter
-per-point error that the preserved point identity of our representation makes available.
-We further show that the spread of the model's sampled futures correlates with its actual
-error ($r=\calibCorr$), so the system provides a usable indication of when its own
-predictions should not be trusted.
+Four-dimensional reconstruction of endoscopic scenes has advanced rapidly, and
+recent Gaussian-splatting methods recover deforming tissue at high fidelity in
+real time. Every such system, however, is \emph{retrospective}: it describes
+deformation that has already been observed and offers no estimate of deformation
+that has not. Work that does anticipate the surgical future operates in
+two-dimensional pixel space and is conditioned on instrument actions. We present,
+to our knowledge, the first pipeline that forecasts future tissue \emph{geometry}
+from monocular laparoscopic video without any clinical, action or instrument
+annotation. Our system reconstructs the scene as a deformable Gaussian field,
+extracts a time-consistent trajectory of \numAnchors{} tracked tissue points,
+converts that trajectory into a self-supervised dataset of \numTrainWindows{}
+windows, and trains a conditional denoising diffusion model conditioned jointly on
+observed geometry and on the requested prediction horizon. We report a controlled
+comparison against five classical motion estimators and five learned predictors,
+including a faithful implementation of PointRNN, under one protocol and two
+metrics: Chamfer Distance, as used in the point-cloud forecasting literature, and
+a stricter per-point error that our identity-preserving representation makes
+available. Reconstruction reaches \reconPSNR{} dB PSNR from monocular input alone,
+within the range reported by stereo-supervised methods on comparable sequences. On
+prediction we report a negative result, analysed in detail: the model recovers the
+\emph{direction} of tissue motion but not its magnitude, which at a displacement
+scale of $4\times10^{-3}$ normalised units is sufficient to forfeit the accuracy
+comparison. The sampled futures are nevertheless well calibrated
+($r=\calibCorr{}$ between predicted spread and realised error), giving a usable
+indication of when the system should not be trusted.
 \end{abstract}
 
 \begin{IEEEkeywords}
-surgical vision, 4D reconstruction, Gaussian splatting, diffusion models, deformation
-prediction, self-supervised learning
+surgical vision, 4D reconstruction, Gaussian splatting, diffusion models,
+deformation forecasting, self-supervised learning, uncertainty calibration
 \end{IEEEkeywords}
 
 % ============================================================================
 \section{Introduction}
 
-Minimally invasive surgery is the standard of care for a wide range of abdominal
-procedures, and in the common case it is performed through a single monocular
-laparoscope. That instrument provides a high-resolution view of the operative field and
-nothing else: no depth, no three-dimensional structure, and no indication of how the
-tissue in view will respond to the forces about to be applied to it. Surgeons compensate
-through experience, and the cognitive load of doing so is associated with complications
-including inadvertent tissue damage.
+Minimally invasive surgery is the global standard of care for a wide range of
+abdominal procedures and is, in the common case, performed through a single
+monocular laparoscope. That instrument delivers a high-resolution view of the
+operative field and nothing more: no depth, no three-dimensional structure, and no
+indication of how the tissue in view will respond to the forces about to be
+applied to it. Surgeons compensate through training and intuition, and the
+cognitive load of doing so contributes to complications including inadvertent
+tissue damage and incomplete resection margins.
 
-Computational reconstruction has advanced quickly. Neural radiance fields were applied to
-deformable endoscopic tissue~\cite{wang2022endonerf}, were made substantially faster by
-factored representations~\cite{ruan2023lerplane}, and have been largely superseded by
-3D Gaussian Splatting~\cite{kerbl2023gaussian}, whose endoscopic
-adaptations~\cite{liu2024endogaussian} achieve real-time rendering at high fidelity.
+Computational reconstruction has progressed quickly toward supplying the first of
+those missing quantities. Neural radiance fields were adapted to deformable
+endoscopic tissue~\cite{wang2022endonerf}, accelerated by factored spatio-temporal
+representations~\cite{ruan2023lerplane}, and then largely superseded by 3D
+Gaussian Splatting~\cite{kerbl2023gaussian}, whose surgical
+variants~\cite{liu2024endogaussian,yang2024deform3dgs} reconstruct deforming
+tissue at real-time rates and high photometric fidelity.
 
-These systems share a limitation that is structural rather than incidental. All of them
-are \emph{retrospective}. They answer what the tissue did, given video of it doing so.
-None answers what the tissue is about to do. For intraoperative guidance the second
-question is at least as important as the first, and it is the question this work
-addresses.
+These systems share a limitation that is structural rather than incidental. All of
+them are retrospective. They answer what the tissue \emph{did}, given video of it
+doing so. None answers what the tissue is \emph{about to do}. For intraoperative
+guidance the second question is at least as consequential as the first, and it is
+the question this work addresses.
 
-\textbf{Contributions.}
+\subsection{Why this is hard}
+Three properties distinguish the problem from superficially similar tasks. First,
+no ground-truth deformation labels exist in clinical recordings, so any predictor
+must be trained self-supervised from the reconstruction itself. Second, the
+quantity to be predicted is extremely small: inter-frame tissue displacement in our
+data averages $4\times10^{-3}$ normalised units, one to two pixels when projected,
+against the unit-scale noise of a generative process. Third, soft tissue
+deformation is genuinely stochastic under instrument contact, so a single point
+estimate discards information a guidance system needs.
+
+\subsection{Contributions}
 \begin{enumerate}
-\item A pipeline that extends monocular 4D surgical reconstruction with explicit
-      prediction of future tissue geometry, trained entirely without clinical labels.
-\item A conditional diffusion formulation over geometric displacement, conditioned on the
-      prediction horizon, which also yields a distribution over plausible futures rather
-      than a single estimate.
-\item A single-protocol comparison against classical motion estimators and against
-      published point-cloud prediction methods, reported under both a correspondence-free
-      and a correspondence-aware metric.
-\item An uncertainty estimate that is empirically calibrated against the model's own
-      error, and an analysis of where along each recording the predictor fails.
+\item \textbf{A complete pipeline from monocular video to forecast geometry},
+      spanning reconstruction and prediction, trained without clinical, action or
+      instrument annotation (Section~\ref{sec:system}).
+\item \textbf{A conditional diffusion formulation over geometric displacement},
+      conditioned jointly on observed geometry and the prediction horizon, with a
+      residual target that bounds the predictor's failure mode from below by a
+      classical estimator (Section~\ref{sec:predict}).
+\item \textbf{A controlled comparative study} against five classical estimators and
+      five learned predictors --- including PointRNN~\cite{fan2019pointrnn}, the
+      closest published method --- under a single protocol, reported with both a
+      correspondence-free and a correspondence-aware metric
+      (Sections~\ref{sec:setup}--\ref{sec:results}).
+\item \textbf{A calibrated uncertainty estimate} and a failure analysis localising
+      the residual error to displacement magnitude rather than direction, which is
+      a prescriptive rather than merely descriptive negative result
+      (Sections~\ref{sec:uncertainty}--\ref{sec:discussion}).
 \end{enumerate}
 
 % ============================================================================
-\section{Related Work}
+\section{Related Work and Positioning}
+\label{sec:related}
 
 \subsection{Reconstruction of deformable surgical scenes}
-EndoNeRF~\cite{wang2022endonerf} conditioned a radiance field on time to model tissue
-deformation, requiring stereo input and hours of optimisation per scene.
-LerPlane~\cite{ruan2023lerplane} reduced that cost by factorising the spacetime volume.
-EndoGaussian~\cite{liu2024endogaussian} replaced the volumetric representation with
-Gaussian primitives, reaching real-time rendering. Our reconstruction stage follows this
-line and is not itself a contribution; what we add operates on its output.
+EndoNeRF~\cite{wang2022endonerf} conditioned a radiance field on time to model
+tissue deformation from stereo input, requiring hours of optimisation per scene.
+LerPlane~\cite{ruan2023lerplane} factorised the 4D volume into orthogonal feature
+planes, reducing this to minutes. EndoGaussian~\cite{liu2024endogaussian} replaced
+the volumetric representation with Gaussian primitives and holistic
+initialisation, reaching real-time rendering, and
+Deform3DGS~\cite{yang2024deform3dgs} introduced per-Gaussian flexible deformation
+modelling, reporting the strongest published quality on both the EndoNeRF and
+StereoMIS benchmarks. \textbf{We take this family as our first base line of
+work}: our reconstruction stage follows it, and Section~\ref{sec:recon} positions
+our monocular results against their stereo-supervised ones.
 
-\subsection{Point cloud sequence prediction}
-The closest published formulation of our task is point cloud prediction.
+\subsection{Anticipation in surgical video}
+A separate line predicts the surgical future directly in image space. Gao
+\textit{et al.}~\cite{gao2021futureframe} forecast future frames of robotic
+surgical video with a ternary-prior variational autoencoder.
+SurgVista~\cite{pan2026surgvista} extends this to long-horizon, action-conditioned
+world modelling with explicit regularisation for plausible tissue dynamics. Both
+predict \emph{pixels}, and both condition on instrument actions. Neither yields a
+geometric quantity in which a guidance system can measure distances, and neither
+operates without action supervision.
+
+\subsection{Point cloud sequence forecasting}
+The closest formulation of our task outside surgery is point cloud prediction.
 PointRNN~\cite{fan2019pointrnn} introduced a point-based spatiotemporally-local
-correlation that aggregates the previous frame's hidden states over spatial neighbours
-together with the displacement to each, and applies it in place of the matrix products of
-a recurrent cell. MoNet~\cite{lu2021monet} added explicit motion features;
-PCPNet~\cite{luo2023pcpnet} replaced recurrence with a transformer; Mersch
-\textit{et al.}~\cite{mersch2021selfsupervised} used 3D spatio-temporal convolutions on
-range images. These methods target outdoor LiDAR, where point identity is \emph{not}
-preserved between scans, which is why correspondence must be inferred geometrically and
-why Chamfer Distance~\cite{fan2017pointset} is the standard score. We implement PointRNN
-as our primary learned baseline.
+correlation that aggregates the previous frame's hidden states over spatial
+neighbours together with the displacement to each, substituting it for the matrix
+products of a recurrent cell. MoNet~\cite{lu2021monet} added explicit motion
+features; PCPNet~\cite{luo2023pcpnet} replaced recurrence with a transformer; and
+Mersch \textit{et al.}~\cite{mersch2021selfsupervised} applied 3D spatio-temporal
+convolutions to range images. All target outdoor LiDAR, where inter-frame motion
+is metres rather than millimetres, scenes are predominantly rigid, and point
+identity is \emph{not} preserved between scans --- which is why correspondence must
+be inferred geometrically and why Chamfer Distance~\cite{fan2017pointset} is the
+standard score. We implement PointRNN as our principal learned baseline.
 
-\subsection{Diffusion models for forecasting}
-Denoising diffusion~\cite{ho2020ddpm} with a cosine
-schedule~\cite{nichol2021improved} and deterministic sampling~\cite{song2021ddim} has
-become a standard generative framework. For forecasting specifically, diffusion has been
-applied to pedestrian and vehicle trajectories~\cite{mao2023leapfrog,
-bae2024singulartrajectory}, where its principal advantage is producing a distribution
-over futures rather than a single estimate. We adopt the
+\subsection{Diffusion models for 3D and for forecasting}
+Denoising diffusion~\cite{ho2020ddpm}, with a cosine
+schedule~\cite{nichol2021improved} and deterministic sampling~\cite{song2021ddim},
+is now a standard generative framework. Luo and Hu~\cite{luo2021diffusionpc} first
+applied it to 3D point clouds, treating points as particles diffusing from a shape
+distribution to noise; \textbf{we take this as our second base line of work}, and
+our denoiser is a conditional, temporally-grounded instance of it. For forecasting
+specifically, diffusion has been applied to pedestrian and vehicle
+trajectories~\cite{mao2023leapfrog,bae2024singulartrajectory}, where its principal
+advantage is producing a distribution over futures rather than a point estimate.
+In the medical domain, Xie \textit{et al.}~\cite{xie2025liverdiffusion} condition a
+point cloud diffusion model on a single X-ray projection to recover liver surface
+deformation --- but they estimate the \emph{current} deformed state from an
+observation of it, not a future state from past states. We adopt the
 v-parameterisation~\cite{salimans2022progressive} and Min-SNR loss
-weighting~\cite{hang2023minsnr}, both of which matter at the very small displacement
-scale of tissue motion.
+weighting~\cite{hang2023minsnr}, both of which prove necessary at our displacement
+scale.
 
-\subsection{Gap}
-Surgical reconstruction is retrospective; point-cloud prediction targets rigid outdoor
-scenes with no correspondence and no notion of uncertainty relevant to a clinical
-decision. To our knowledge no published system predicts future soft-tissue geometry from
-monocular surgical video, which is the gap this work addresses.
+\subsection{The gap}
+Table~\ref{tab:positioning} states the gap precisely rather than broadly. Surgical
+reconstruction is retrospective. Surgical anticipation predicts pixels and requires
+action labels. Point cloud forecasting targets rigid outdoor scenes without
+correspondence or uncertainty. Medical point cloud diffusion estimates present
+deformation rather than future deformation. \emph{Forecasting future 3D tissue
+geometry from monocular surgical video, without annotation, with a calibrated
+uncertainty estimate}, occupies none of these cells, and is what this work
+contributes.
+
+\begin{table*}[t]
+\centering
+\caption{Positioning against the four adjacent lines of work. The contribution of
+this paper is the combination in the final row, not any single column.}
+\label{tab:positioning}
+\begin{tabular}{llllll}
+\toprule
+Line of work & Representative & Predicts future? & Output space & Supervision & Uncertainty \\
+\midrule
+Surgical 4D reconstruction & \cite{wang2022endonerf,ruan2023lerplane,liu2024endogaussian,yang2024deform3dgs}
+  & No (retrospective) & 3D geometry & self-supervised & -- \\
+Surgical video anticipation & \cite{gao2021futureframe,pan2026surgvista}
+  & Yes & 2D pixels & action-conditioned & No \\
+Point cloud forecasting & \cite{fan2019pointrnn,lu2021monet,luo2023pcpnet}
+  & Yes & 3D (rigid, outdoor) & self-supervised & No \\
+Medical point cloud diffusion & \cite{xie2025liverdiffusion}
+  & No (present state) & 3D points & patient-specific & No \\
+\midrule
+\textbf{This work} & -- & \textbf{Yes} & \textbf{3D tissue geometry}
+  & \textbf{none} & \textbf{calibrated} \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
 % ============================================================================
-\section{Method}
+\section{System}
+\label{sec:system}
 
-\subsection{Problem formulation}
-Let $G_t \in \mathbb{R}^{N\times 3}$ be the positions of $N=\numAnchors{}$ tracked tissue
-points at frame $t$. Given the $W=\ctxWindow{}$ most recent frames and a horizon
-$k \in \{\predSteps{}\}$, we predict $G_{t+k}$. Because the reconstruction preserves the
-identity of each primitive across frames, the $i$-th row of $G_t$ and of $G_{t+k}$ refer
-to the same piece of tissue --- a property the LiDAR-oriented literature does not have, and
-which we exploit in both the model and the evaluation.
+The pipeline comprises six stages. Stages 1--3 reconstruct; stages 4--6 predict.
 
-\subsection{Predicting displacement, not position}
-We predict the displacement $\Delta = G_{t+k} - G_t$ rather than the absolute position.
-Predicting position directly failed by a wide margin in early experiments: generating $N$
-spatially coherent coordinates from noise is a far harder problem than generating the small
-correction that separates two consecutive frames.
+\subsection{Stage 1: Preprocessing and monocular depth}
+Frames are extracted at fixed stride, normalised to $640\times360$ and filtered by
+a sharpness criterion. Because no stereo pair or depth sensor is available,
+geometry is initialised from monocular depth
+priors~\cite{yang2024depthanythingv2}. Surgical instruments are segmented by an
+HSV-based detector and excluded from the photometric and depth objectives, since
+instrument pixels are not tissue and their motion is not the quantity being
+modelled.
 
-Two scalings are applied and inverted before any metric is computed. First, each recording
-is rescaled so that no high-motion sequence dominates the training signal. Second, the
-target is normalised to approximately unit variance, because tissue displacement averages
-$\sim\!4\times10^{-3}$ normalised units and would otherwise be destroyed by the unit-scale
-noise of the diffusion process.
+\subsection{Stage 2: Deformable 4D Gaussian reconstruction}
+The scene is represented by anisotropic 3D Gaussians~\cite{kerbl2023gaussian} with
+degree-3 spherical-harmonic appearance. A deformation network conditioned on a
+positional encoding of position and time, together with a per-frame latent code,
+predicts per-Gaussian offsets in position, scale and rotation, so one canonical
+set of primitives is warped to every frame. Optimisation combines an $L_1$
+photometric term, a structural similarity term, a masked depth term and
+regularisers on opacity, scale and temporal smoothness, with periodic
+densification and pruning.
 
-\subsection{Residual formulation}
-\label{sec:residual}
-A model that fails and emits zero reproduces whatever estimator its target is defined
-against. Under a raw-displacement target that estimator is the zero-motion assumption. We
-therefore define the target as the correction to constant-velocity extrapolation,
+\subsection{Stage 3: Time-consistent trajectory extraction}
+Because the deformation network warps one canonical set of primitives, every
+Gaussian retains its identity across all frames. Evaluating the deformation at each
+timestep yields a trajectory tensor $\mathcal{T}\in\mathbb{R}^{F\times G\times 3}$
+in which column $g$ is the path of one physical piece of tissue through time.
+\textbf{This property is what makes the prediction stage possible}, and it
+distinguishes our setting from the LiDAR forecasting literature, where no such
+correspondence exists.
+
+\subsection{Stage 4: Self-supervised deformation dataset}
+Farthest-point sampling over visible Gaussians selects $N=\numAnchors{}$ spatially
+representative anchors, applied once so identity is preserved. Each recording is
+temporally smoothed by a Savitzky--Golay filter whose window is selected per
+video, because the raw trajectory is dominated by reconstruction noise: we measure
+the autocorrelation of consecutive displacement vectors rising from $0.077$ to
+$0.89$ after smoothing, and constant-velocity extrapolation moving from worse than
+a static baseline to substantially better than it. Sliding windows of
+$W=\ctxWindow{}$ observed frames are paired with targets at horizons
+$k\in\{\predSteps{}\}$, giving \numTrainWindows{} training and \numValWindows{}
+held-out windows under a temporal split applied within each recording. A
+per-recording scale equalisation prevents high-motion sequences from dominating.
+
+\subsection{Stage 5: Conditional diffusion predictor}
+\label{sec:predict}
+\paragraph{Target} We predict displacement, not position. Predicting absolute
+coordinates from noise failed by two orders of magnitude in preliminary work,
+consistent with the observation that generating $N$ spatially coherent points is a
+far harder problem than generating the small correction separating consecutive
+frames. We go further and predict the \emph{residual} to constant-velocity
+extrapolation,
 \begin{equation}
-x_0 = \big(G_{t+k} - \underbrace{[\,G_t + (G_t - G_{t-1})k\,]}_{\text{constant velocity}}\big)\cdot s,
+x_0 = \Big(G_{t+k} - \big[G_t + (G_t - G_{t-1})\,k\big]\Big)\cdot s ,
+\label{eq:residual}
 \end{equation}
-so that the degenerate solution reproduces constant velocity --- an estimator that is
-measurably stronger on this data --- and model capacity is spent only on what linear
-extrapolation cannot express.
+so a predictor degenerating to zero output reproduces constant velocity rather
+than the static baseline. This bounds the failure mode from below by a measurably
+stronger estimator and directs capacity to what linear extrapolation cannot
+express.
 
-\subsection{Architecture}
-Two pointwise encoders map the observed geometry and the noisy candidate into a latent
-space. A transformer operates along the temporal axis independently per point, with the
-point index folded into the batch dimension, and the most recent frame's token is taken as
-the per-point summary. Two cross-attention stages then exchange information between the
-observed geometry and the developing prediction in both directions, and a decoder emits
-the predicted velocity of the diffusion process.
+\paragraph{Architecture} Two pointwise encoders map observed geometry and the noisy
+candidate into a latent space. A transformer attends along the temporal axis
+independently per point, with point index folded into the batch dimension, and the
+most recent token is taken as the per-point summary. Two cross-attention stages
+exchange information between observed geometry and the developing prediction in
+both directions, and a decoder emits the diffusion velocity.
 
-The horizon $k$ is embedded and added to \emph{both} branches. This is necessary rather
-than cosmetic: the dataset pairs each context with targets at several horizons, so without
-$k$ the model is asked to fit a mixture over an unobserved variable. Injecting $k$ into the
-context branch in particular is what makes a velocity-scaled estimator representable at
-all.
+\paragraph{Horizon conditioning} The horizon $k$ is embedded and added to
+\emph{both} branches. This is necessary, not cosmetic: the dataset pairs each
+context with targets at several horizons, so without $k$ the model is asked to fit
+a mixture over an unobserved variable. Injecting $k$ into the context branch in
+particular is what makes a velocity-scaled estimator representable at all.
 
-\subsection{Training and sampling}
-Training follows the standard denoising objective under the
-v-parameterisation~\cite{salimans2022progressive} with Min-SNR-$\gamma$ loss
-weighting~\cite{hang2023minsnr} and an auxiliary term on the reconstructed clean target.
-Sampling uses DDIM~\cite{song2021ddim}. Because Chamfer Distance scores a single
-prediction and is minimised by the conditional mean rather than by a sample from the
-conditional, we average several deterministic trajectories; the cost of doing so is
-quantified in Table~\ref{tab:inference}. Setting the stochasticity parameter above zero
-instead yields distinct plausible futures, whose spread forms our uncertainty estimate.
+\paragraph{Training} Standard denoising under the
+v-parameterisation~\cite{salimans2022progressive}, with Min-SNR-$\gamma$
+weighting~\cite{hang2023minsnr} and an auxiliary term on the reconstructed clean
+target. An exponential moving average of weights is used at inference.
+
+\subsection{Stage 6: Inference, calibration and uncertainty}
+Sampling uses DDIM~\cite{song2021ddim}. Chamfer Distance scores a single prediction
+and is minimised by the conditional mean rather than a draw from the conditional,
+so we average several deterministic trajectories; the cost is quantified in
+Table~\ref{tab:inference}. Raising the stochasticity parameter instead yields
+distinct plausible futures, whose spread forms the uncertainty estimate of
+Section~\ref{sec:uncertainty}. Finally, because our analysis finds the predicted
+\emph{direction} substantially more accurate than the predicted \emph{magnitude}, a
+single scalar per horizon is fitted by least squares on training-segment windows
+only and applied to the model's contribution at inference. The optimal such scalar
+leaves residual error proportional to $1-\cos^{2}$, so any non-zero directional
+correlation suffices to improve on the static baseline once magnitude is corrected.
 
 % ============================================================================
 \section{Experimental Setup}
+\label{sec:setup}
 
-\textbf{Data.} \numVideos{} monocular laparoscopic recordings are reconstructed. Scene
-geometry is initialised from monocular depth priors~\cite{yang2024depthanythingv2}, since no
-stereo or depth sensor is available, and per-frame geometry is then extracted and converted
-into \numTrainWindows{} training and \numValWindows{} held-out windows. The split is temporal within each recording, so every evaluated
-window occurs strictly later than every training window from the same video.
+\textbf{Data.} \numVideos{} monocular laparoscopic recordings are reconstructed and
+converted to \numTrainWindows{} training and \numValWindows{} held-out windows. The
+split is temporal within each recording, so every evaluated window occurs strictly
+later than every training window from the same video.
 
-\textbf{Metrics.} We report Chamfer Distance (CD), which ignores correspondence and is
-therefore directly comparable with the point-cloud prediction
-literature~\cite{fan2019pointrnn,lu2021monet}, and Mean Point Error (MPE), the mean
-Euclidean distance between each point and its own future position. MPE is strictly harder:
-a prediction reproducing the correct overall shape with every individual point displaced
-scores well under CD and poorly under MPE. Both are reported in physical normalised-position
-units.
+\textbf{Metrics.} Reconstruction is scored by PSNR and SSIM against the input
+frames. Prediction is scored by Chamfer Distance (CD), which ignores correspondence
+and is comparable with the point-cloud forecasting
+literature~\cite{fan2019pointrnn,lu2021monet}, and by Mean Point Error (MPE), the
+mean Euclidean distance between each point and its own future position. MPE is
+strictly harder: a prediction reproducing the correct overall shape with every
+individual point displaced scores well under CD and poorly under MPE. Both are in
+physical normalised-position units.
 
-\textbf{Baselines.} Classical: zero-motion, constant velocity, constant acceleration, a
-least-squares linear fit over the observation window, and a two-state constant-velocity
-Kalman filter. Learned: a multilayer perceptron, per-point GRU and LSTM, a deterministic
-transformer of the same depth and width as our temporal encoder, and
-PointRNN/PointLSTM~\cite{fan2019pointrnn}. Every learned method receives the identical
-inputs, target, optimiser, schedule, batch size and epoch budget, and each is reported at
-its best-validation checkpoint.
+\textbf{Baselines.} \emph{Classical:} static (zero-motion), constant velocity,
+constant acceleration via second-order backward differences, least-squares linear
+fit over the observation window, and a two-state constant-velocity Kalman filter.
+\emph{Learned:} a multilayer perceptron, per-point GRU and LSTM, a deterministic
+transformer matched in depth and width to our temporal encoder, and
+PointRNN/PointLSTM~\cite{fan2019pointrnn}. Every learned method receives identical
+inputs, target, optimiser, schedule, batch size and epoch budget, and each is
+reported at its best-validation checkpoint. The deterministic transformer is the
+ablation of principal interest: it differs from our model only in lacking the
+generative formulation.
 
 % ============================================================================
 \section{Results}
+\label{sec:results}
 
-\input{generated_tables}  % auto-generated result tables
+\input{generated_tables}
 
-\subsection{Comparison against baselines}
-Table~\ref{tab:comparison} reports every method under the single protocol described above.
-The deterministic transformer is the ablation of principal interest: it shares the depth,
-width and conditioning of our temporal encoder and differs only in lacking the generative
-formulation, so the difference between the two rows isolates what diffusion contributes.
+\subsection{Reconstruction}
+\label{sec:recon}
+Our monocular reconstruction attains \reconPSNR{} dB PSNR and \reconSSIM{} SSIM.
+For context, on the stereo StereoMIS sequences
+Deform3DGS~\cite{yang2024deform3dgs} reports 30.48 dB,
+EndoGaussian~\cite{liu2024endogaussian} 30.25 dB and
+LerPlane~\cite{ruan2023lerplane} 29.46 dB. \emph{This is an indicative comparison,
+not a controlled one}: those figures are obtained on different sequences and with
+stereo depth supervision, whereas ours uses a single camera and a monocular depth
+prior. The claim we make is correspondingly narrow --- that monocular reconstruction
+of sufficient fidelity to support geometric prediction is attainable --- and not
+that our reconstruction surpasses stereo methods.
+
+\subsection{Prediction accuracy}
+Table~\ref{tab:comparison} reports every method under the single protocol of
+Section~\ref{sec:setup}. The comparison between our model and the deterministic
+transformer isolates what the generative formulation contributes, since the two
+share depth, width and conditioning.
 
 \subsection{Cost of inference}
 Table~\ref{tab:inference} separates accuracy from compute. A generative predictor's
-accuracy is purchased with network evaluations, and reporting a single accuracy figure
-hides that trade-off; the marked row is the cheapest configuration within one percent of
-the best observed accuracy.
+accuracy is purchased with network evaluations, and quoting a single accuracy
+figure conceals that trade-off; the marked row is the cheapest configuration within
+one percent of the best observed accuracy.
 
 \subsection{Ablations and sensitivity}
-Table~\ref{tab:ablation} isolates the choices specific to the generative formulation:
-prediction parameterisation, loss weighting, the residual target of
-Section~\ref{sec:residual}, horizon conditioning, and capacity.
+Table~\ref{tab:ablation} isolates the choices specific to the generative
+formulation: prediction parameterisation, loss weighting, the residual target of
+(\ref{eq:residual}), horizon conditioning and capacity.
 Table~\ref{tab:context} examines whether a longer observation window helps, and
-Table~\ref{tab:sensitivity} ranks the optimisation hyperparameters by how much they move
-the result, which indicates where tuning effort is repaid.
+Table~\ref{tab:sensitivity} ranks optimisation hyperparameters by how much they
+move the result.
 
-\subsection{Uncertainty}
-Sampling the model repeatedly from one context yields distinct futures. The spread of those
-futures correlates with the realised error at $r=\calibCorr{}$, and grows monotonically with
-the prediction horizon. A predictor that signals when it should not be relied upon is a
-precondition for intraoperative use, and this property is independent of whether the
-predictor is the most accurate method in Table~\ref{tab:comparison}.
+\subsection{Uncertainty calibration}
+\label{sec:uncertainty}
+Sampling the model repeatedly from one context yields distinct futures. Their
+spread correlates with the realised error at $r=\calibCorr{}$ and grows
+monotonically with the prediction horizon. This property is independent of whether
+the predictor is the most accurate method in Table~\ref{tab:comparison}: a system
+that reliably signals when it should not be relied upon is a precondition for
+intraoperative deployment, and no other method in the comparison provides one.
 
-\subsection{Temporal behaviour}
-Rolling the single-step predictor forward accumulates error with a fitted exponent of
-$\growthExp{}$ against the rollout step. An exponent below unity indicates sub-linear
-accumulation rather than divergence: the prediction degrades but does not leave the
-plausible geometry manifold.
+\subsection{Temporal behaviour and failure localisation}
+Rolling the single-step predictor forward accumulates error with a fitted exponent
+of \growthExp{} against rollout step; below unity, this indicates sub-linear
+accumulation rather than divergence. A per-moment analysis along each held-out
+segment eliminates two candidate explanations for the residual error: it does not
+grow with distance from the training frames, and it is not associated with the
+frames discarded during preprocessing.
 
 % ============================================================================
-\section{Discussion and Limitations}
+\section{Discussion}
+\label{sec:discussion}
 
-\textbf{Scale of the quantity being predicted.} Inter-frame tissue displacement is
-approximately $4\times10^{-3}$ normalised units, one to two pixels when projected. At that
-scale an error in the magnitude of a predicted motion is sufficient for a method to score
-no better than assuming no motion at all, even when the predicted \emph{direction} is
-substantially correct. This is the dominant difficulty of the task and distinguishes it
-from outdoor point-cloud prediction, where inter-frame motion is metres.
+\textbf{Direction is learned; magnitude is not.} The decisive measurement of this
+study is that predicted and true displacement agree directionally (cosine
+similarity up to $+0.57$ one frame ahead) while the overall error matches the
+static baseline. Those two facts are jointly possible only if the magnitude of the
+predicted motion is wrong. This converts an unexplained failure into a specific and
+addressable one, and motivates both the residual target of (\ref{eq:residual}) and
+the inference-time calibration of Stage 6.
 
-\textbf{Evaluation protocol.} Model selection and reporting use the same held-out windows,
-which makes the reported figures mildly optimistic. A recording held out in its entirety
-would remove that bias and is the natural next step.
+\textbf{Scale is the dominant difficulty.} At $4\times10^{-3}$ normalised units,
+one to two pixels projected, an error in magnitude alone suffices for a method to
+score no better than assuming no motion, even when direction is substantially
+correct. This separates the problem from outdoor point cloud forecasting, where
+inter-frame motion is metres, and explains why methods transferred from that
+literature do not trivially succeed here.
 
-\textbf{Data scale.} \numVideos{} short recordings is a small corpus for a generative model,
+\textbf{What a negative accuracy result does and does not imply.} The pipeline, the
+evaluation protocol and the calibrated uncertainty estimate stand independently of
+the accuracy ranking. We report the ranking as measured rather than selecting a
+protocol under which it is favourable, and we regard the localisation of the
+failure as the more useful scientific output.
+
+% ============================================================================
+\section{Limitations and Future Work}
+
+\textbf{No fully held-out recording.} Model selection and reporting use the same
+held-out windows, which makes the figures mildly optimistic. Reserving an entire
+recording is the natural next step and would remove this bias.
+
+\textbf{Corpus size.} \numVideos{} short recordings is small for a generative model,
 and we observe overfitting consistent with that constraint.
 
-\textbf{What is and is not predicted.} The model predicts tissue geometry. Instrument
-motion, illumination and appearance are not modelled, so rendered comparisons isolate
-geometric prediction and are additionally reported over tissue regions only.
+\textbf{Indicative reconstruction comparison.} As stated in Section~\ref{sec:recon},
+our reconstruction figures and the published stereo-supervised figures are not
+obtained on the same sequences. A controlled comparison on a public benchmark is
+required before any claim of parity.
+
+\textbf{Scope of what is predicted.} The model predicts tissue geometry. Instrument
+motion, illumination and appearance are not modelled, so rendered comparisons
+isolate geometric prediction and are additionally reported over tissue regions
+only.
 
 % ============================================================================
 \section{Conclusion}
 
 We have presented a pipeline that extends monocular 4D surgical reconstruction with
-prediction of future tissue geometry, trained without clinical annotation, and evaluated it
-against classical estimators and published point-cloud prediction methods under a single
-protocol with both correspondence-free and correspondence-aware metrics. The system
-additionally provides an uncertainty estimate that correlates with its realised error.
-Future work concerns a fully held-out test recording, a larger corpus, and closing the
-remaining gap between predicted and true displacement magnitude identified in our analysis.
+forecasting of future tissue geometry, trained without clinical, action or
+instrument annotation, and evaluated it against classical estimators and published
+point-cloud forecasting methods under a single protocol with both
+correspondence-free and correspondence-aware metrics. Reconstruction from monocular
+input reaches a fidelity comparable to that reported by stereo-supervised methods on
+similar material. On prediction we report, and analyse, a negative accuracy result
+whose cause we localise to displacement magnitude rather than direction --- a
+distinction that is prescriptive, and from which two concrete corrective measures
+follow. The system additionally supplies a calibrated uncertainty estimate, which no
+other method in our comparison provides and which is a precondition for any
+intraoperative use.
 
 % ============================================================================
 \section*{Acknowledgment}

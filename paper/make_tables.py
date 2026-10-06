@@ -26,6 +26,8 @@ SRC = {
     'm7': f'{args.drive}/module7/module7_comparison.json',
     'm8': f'{args.drive}/module8/module8_hpo.json',
     'm4': f'{args.drive}/module4_combined/module4_metadata.json',
+    'rec1': f'{args.drive}/multi_video_summary.json',
+    'rec2': f'{args.drive}/videos7_10_summary.json',
 }
 D = {}
 for key, path in SRC.items():
@@ -95,12 +97,48 @@ else:
     for n in ('bestMethod', 'bestMPE', 'oursMPE', 'oursCD', 'oursParams', 'naiveMPE'):
         macro(n, r'\textit{[pending]}')
 
+# Reconstruction quality, averaged over whatever videos have been reconstructed. Module 2
+# writes one entry per workspace across two summary files (videos 1-6 and 7-10).
+_rec = {}
+for key in ('rec1', 'rec2'):
+    if isinstance(D.get(key), dict):
+        _rec.update(D[key])
+_psnr = [v['psnr'] for v in _rec.values() if isinstance(v, dict) and 'psnr' in v]
+_ssim = [v['ssim'] for v in _rec.values() if isinstance(v, dict) and 'ssim' in v]
+if _psnr:
+    macro('reconPSNR', f'{sum(_psnr) / len(_psnr):.2f}')
+    macro('reconSSIM', f'{sum(_ssim) / len(_ssim):.4f}' if _ssim else r'\textit{[pending]}')
+    macro('reconVideos', len(_psnr))
+else:
+    macro('reconPSNR', r'\textit{[pending]}')
+    macro('reconSSIM', r'\textit{[pending]}')
+    macro('reconVideos', r'\textit{[pending]}')
+
 if D['m6'] and D['m6'].get('hypotheses'):
     macro('calibCorr', f"{D['m6']['hypotheses'].get('spread_error_correlation', float('nan')):.2f}")
     macro('growthExp', f"{D['m6'].get('rollout_growth_exponent', float('nan')):.2f}")
 else:
     macro('calibCorr', r'\textit{[pending]}')
     macro('growthExp', r'\textit{[pending]}')
+W('')
+
+# ── Table 0: reconstruction quality, ours against published figures ──
+W(r'\begin{table}[t]\centering')
+W(r'\caption{Reconstruction quality. Published figures are those reported by each method '
+  r'on the stereo StereoMIS sequences and are shown for context only: they are obtained on '
+  r'different data and with stereo depth supervision, so this is indicative, not a '
+  r'controlled comparison.}\label{tab:recon}')
+W(r'\begin{tabular}{llrr}\hline')
+W(r'Method & Input & PSNR (dB) & SSIM \\ \hline')
+W(r'LerPlane~\cite{ruan2023lerplane} & stereo & 29.46 & -- \\')
+W(r'EndoGaussian~\cite{liu2024endogaussian} & stereo & 30.25 & -- \\')
+W(r'Deform3DGS~\cite{yang2024deform3dgs} & stereo & 30.48 & -- \\ \hline')
+if _psnr:
+    W(rf"Ours & \textbf{{monocular}} & {sum(_psnr) / len(_psnr):.2f} & "
+      rf"{(sum(_ssim) / len(_ssim)) if _ssim else float('nan'):.4f} \\ \hline")
+else:
+    W(r'Ours & \textbf{monocular} & \textit{[pending]} & \textit{[pending]} \\ \hline')
+W(r'\end{tabular}\end{table}')
 W('')
 
 # ── Table 1: comparative results ─────────────────────────────────────
