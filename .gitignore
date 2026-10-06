@@ -28,3 +28,7 @@ paper/*.out
 paper/*.pdf
 paper/generated_macros.tex
 paper/generated_tables.tex
+
+# tectonic binary downloaded by paper/build.sh
+paper/tectonic
+paper/tectonic.tar.gz
