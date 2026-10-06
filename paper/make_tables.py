@@ -73,8 +73,10 @@ if D['m4']:
     macro('numTrainWindows', f"{D['m4'].get('total_train', 0):,}")
     macro('numValWindows', f"{D['m4'].get('total_val', 0):,}")
 else:
-    for n, v in (('numVideos', '??'), ('numAnchors', '??'), ('ctxWindow', '??'),
-                 ('predSteps', '??'), ('numTrainWindows', '??'), ('numValWindows', '??')):
+    PENDING = r'\textit{[pending]}'
+    for n, v in (('numVideos', PENDING), ('numAnchors', PENDING), ('ctxWindow', PENDING),
+                 ('predSteps', PENDING), ('numTrainWindows', PENDING),
+                 ('numValWindows', PENDING)):
         macro(n, v)
 
 if D['m7']:
@@ -91,14 +93,14 @@ if D['m7']:
         macro('naiveMPE', f'{naive:.4f}')
 else:
     for n in ('bestMethod', 'bestMPE', 'oursMPE', 'oursCD', 'oursParams', 'naiveMPE'):
-        macro(n, '??')
+        macro(n, r'\textit{[pending]}')
 
 if D['m6'] and D['m6'].get('hypotheses'):
     macro('calibCorr', f"{D['m6']['hypotheses'].get('spread_error_correlation', float('nan')):.2f}")
     macro('growthExp', f"{D['m6'].get('rollout_growth_exponent', float('nan')):.2f}")
 else:
-    macro('calibCorr', '??')
-    macro('growthExp', '??')
+    macro('calibCorr', r'\textit{[pending]}')
+    macro('growthExp', r'\textit{[pending]}')
 W('')
 
 # ── Table 1: comparative results ─────────────────────────────────────

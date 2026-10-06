@@ -13,6 +13,17 @@
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 
+% IEEEtran expects Times. pdflatex (Overleaf's default) resolves that itself; under a
+% Unicode engine such as tectonic the ptm shapes are undefined and the text falls back to
+% Latin Modern, so the Times-metric clone that ships with TeX Live is requested explicitly.
+% Harmless under pdflatex, which skips this branch.
+\usepackage{iftex}
+\ifXeTeX
+  \usepackage{fontspec}
+  \setmainfont{texgyretermes}[
+    Extension = .otf, UprightFont = *-regular, BoldFont = *-bold,
+    ItalicFont = *-italic, BoldItalicFont = *-bolditalic]
+\fi
 \usepackage{cite}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
@@ -28,14 +39,9 @@
 {\footnotesize A self-supervised 4D reconstruction and diffusion-based prediction pipeline}}
 
 \author{
-\IEEEauthorblockN{Ahmad Rashad, Shehroz, Humair}
+\IEEEauthorblockN{Ahmad Rashad, Shehroz, Humair, and Akhtar Jamil}
 \IEEEauthorblockA{\textit{Department of Computer Science} \\
-\textit{FAST National University of Computer and Emerging Sciences}\\
-Islamabad, Pakistan}
-\and
-\IEEEauthorblockN{Akhtar Jamil}
-\IEEEauthorblockA{\textit{Department of Computer Science} \\
-\textit{FAST National University of Computer and Emerging Sciences}\\
+\textit{FAST National University of Computer and Emerging Sciences} \\
 Islamabad, Pakistan}
 }
 
