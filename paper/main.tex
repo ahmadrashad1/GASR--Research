@@ -27,6 +27,8 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, backgrounds}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 
@@ -230,6 +232,36 @@ Medical point cloud diffusion & \cite{xie2025liverdiffusion}
 \end{table*}
 
 % ============================================================================
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=3.5mm, >={Stealth[length=2mm]},
+  box/.style={draw, rounded corners=1pt, align=center, font=\scriptsize,
+              minimum height=8.5mm, text width=19mm, inner sep=1.2pt},
+  lbl/.style={font=\scriptsize\itshape}]
+\node[box] (v)  {Monocular\\video};
+\node[box, right=of v]  (d) {Depth prior\\+ tool masks};
+\node[box, right=of d]  (g) {Deformable 4D\\Gaussian field};
+\node[box, right=of g]  (t) {Trajectory\\$\mathcal{T}\!\in\!\mathbb{R}^{F\times G\times3}$};
+\node[box, right=of t]  (w) {Self-supervised\\windows};
+\node[box, right=of w]  (m) {Conditional\\diffusion};
+\node[box, right=of m]  (p) {Forecast\\$+$ uncertainty};
+\foreach \a/\b in {v/d, d/g, g/t, t/w, w/m, m/p} \draw[->] (\a) -- (\b);
+\begin{scope}[on background layer]
+  \node[fill=black!6, rounded corners, fit=(v)(t), inner sep=3pt] (ph1) {};
+  \node[fill=black!12, rounded corners, fit=(w)(p), inner sep=3pt] (ph2) {};
+\end{scope}
+\node[lbl, below=1.2mm of ph1] {Reconstruction --- retrospective, as in prior work};
+\node[lbl, below=1.2mm of ph2] {Prediction --- the contribution of this work};
+\end{tikzpicture}
+\caption{The pipeline. Stages 1--3 reconstruct the scene and recover a
+time-consistent trajectory in which each Gaussian keeps its identity across
+frames; stages 4--6 exploit that correspondence to forecast geometry the camera
+has not yet observed. No stage uses clinical, action or instrument annotation.}
+\label{fig:pipeline}
+\end{figure*}
+
 \section{System}
 \label{sec:system}
 
@@ -359,6 +391,27 @@ generative formulation.
 
 \input{generated_tables}
 
+
+\IfFileExists{figures/qualitative.png}{%
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{figures/qualitative.png}
+\caption{Predicted versus actual geometry on held-out frames. Columns: the real
+frame; the reconstruction, which bounds what any predictor can achieve; the
+predicted frame; the static baseline; and the predicted motion field, magnified
+so that a one-pixel displacement is visible and coloured by agreement with the
+true motion.}
+\label{fig:qualitative}
+\end{figure}}{}
+
+\IfFileExists{figures/analysis.png}{%
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{figures/analysis.png}
+\caption{Prediction analysis. Accuracy against horizon, rollout error
+accumulation, and the relationship between the spread of sampled futures and the
+realised error that underpins Section~\ref{sec:uncertainty}.}
+\label{fig:analysis}
+\end{figure}}{}
+
 \subsection{Reconstruction}
 \label{sec:recon}
 Our monocular reconstruction attains \reconPSNR{} dB PSNR and \reconSSIM{} SSIM.
@@ -373,10 +426,37 @@ of sufficient fidelity to support geometric prediction is attainable --- and not
 that our reconstruction surpasses stereo methods.
 
 \subsection{Prediction accuracy}
-Table~\ref{tab:comparison} reports every method under the single protocol of
-Section~\ref{sec:setup}. The comparison between our model and the deterministic
-transformer isolates what the generative formulation contributes, since the two
-share depth, width and conditioning.
+Table~\ref{tab:comparison} reports the comparison under the protocol of
+Section~\ref{sec:setup}, and the outcome is negative: our model is
+indistinguishable from the static baseline at every horizon, while
+constant-velocity extrapolation is substantially better than both --- by
+roughly 41\,\% at $k{=}1$ and 16\,\% at $k{=}3$. Per-video results show this is not
+attributable to particular scenes: the model fails to improve on the static
+baseline on all \numVideos{} recordings, by between 0.2\,\% and 4.7\,\%.
+
+Training itself is not at fault. The objective converges smoothly from
+\(0.36\) to \(0.012\) over 500 epochs with no instability, and the
+\numParams{}-parameter model reaches its best held-out score near epoch
+\bestEpoch{}, after which held-out error rises while training error continues to
+fall --- overfitting consistent with a corpus of \numVideos{} short recordings.
+
+\subsection{Direction versus magnitude}
+\label{sec:direction}
+Accuracy alone cannot distinguish a predictor that has learned nothing from one
+that has learned where tissue is going but not how far. Decomposing the predicted
+displacement separates them, and Table~\ref{tab:direction} reports the result that
+organises the rest of this paper: predicted and true displacement agree
+directionally at $\cos = \cosOne{}$ one frame ahead, decaying to \cosThree{} at
+three frames and inverting to \cosTen{} by ten. Within the denoising process
+itself, agreement rises monotonically from $+0.30$ at the first step to $+0.58$ at
+the last, confirming that the generative procedure assembles a coherent motion
+field rather than noise.
+
+A predictor producing meaningless output would sit near zero. A cosine of
+\cosOne{} \emph{combined with} an error equal to the static baseline is possible
+only if the magnitude of the predicted motion is wrong. That is a far more
+tractable deficiency than an absent signal, and both corrective measures described
+in Sections~\ref{sec:predict} and~\ref{sec:system} follow from it.
 
 \subsection{Cost of inference}
 Table~\ref{tab:inference} separates accuracy from compute. A generative predictor's
@@ -395,8 +475,9 @@ move the result.
 \subsection{Uncertainty calibration}
 \label{sec:uncertainty}
 Sampling the model repeatedly from one context yields distinct futures. Their
-spread correlates with the realised error at $r=\calibCorr{}$ and grows
-monotonically with the prediction horizon. This property is independent of whether
+spread correlates with the realised error at $r=\calibCorr{}$, and the mean spread
+grows monotonically with horizon, from $1.1\times10^{-4}$ one frame ahead to
+$5.5\times10^{-4}$ at ten. This property is independent of whether
 the predictor is the most accurate method in Table~\ref{tab:comparison}: a system
 that reliably signals when it should not be relied upon is a precondition for
 intraoperative deployment, and no other method in the comparison provides one.
@@ -404,10 +485,29 @@ intraoperative deployment, and no other method in the comparison provides one.
 \subsection{Temporal behaviour and failure localisation}
 Rolling the single-step predictor forward accumulates error with a fitted exponent
 of \growthExp{} against rollout step; below unity, this indicates sub-linear
-accumulation rather than divergence. A per-moment analysis along each held-out
-segment eliminates two candidate explanations for the residual error: it does not
-grow with distance from the training frames, and it is not associated with the
-frames discarded during preprocessing.
+accumulation rather than divergence. Constant velocity behaves oppositely: best at
+one frame, it crosses above the static baseline by roughly four steps and is about
+twice as poor by ten. The two classical estimators are therefore each superior at
+opposite ends of the horizon range, and no predictor in our comparison is strong
+across both.
+
+A per-moment analysis along each held-out segment eliminates two candidate
+explanations for the residual error. It does not grow with distance from the
+training frames (Spearman $\rho=\driftRho{}$, $p=\driftP{}$), so the model is not
+degrading as it extrapolates further in time. Nor is it associated with the frames
+discarded during preprocessing: across the 333 evaluation points whose original
+frame timing could be verified, no frames had been discarded. Eliminating
+explanations by measurement, rather than by assumption, is what leaves displacement
+magnitude as the remaining candidate.
+
+\subsection{Image-space behaviour}
+Rendering the predicted geometry back into the image plane gives an independent
+view. At one frame ahead the reconstruction of the true frame reaches
+\imReconPSNR{}\,dB, the predicted frame \imPredPSNR{}\,dB and the static baseline
+\imNaivePSNR{}\,dB. The reconstruction figure bounds what any predictor could
+achieve, so approximately $3.3$\,dB of headroom exists, of which the current model
+realises a negligible fraction --- the same conclusion as the geometric metrics,
+reached independently.
 
 % ============================================================================
 \section{Discussion}

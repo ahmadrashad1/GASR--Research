@@ -29,6 +29,16 @@ SRC = {
     'rec1': f'{args.drive}/multi_video_summary.json',
     'rec2': f'{args.drive}/videos7_10_summary.json',
 }
+# Results already measured but whose live JSON is not on this machine. Used only where
+# the live file is absent, and any table built from it says so in its caption.
+MEAS = {}
+_mp = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'measured.json')
+try:
+    MEAS = {k: v for k, v in json.load(open(_mp)).items() if not k.startswith('_')}
+    print(f'  loaded transcribed results: {_mp}')
+except Exception as e:
+    print(f'  no measured.json ({type(e).__name__}) -- live results only')
+
 D = {}
 for key, path in SRC.items():
     try:
@@ -74,6 +84,14 @@ if D['m4']:
     macro('predSteps', ', '.join(str(k) for k in D['m4'].get('pred_steps', [])))
     macro('numTrainWindows', f"{D['m4'].get('total_train', 0):,}")
     macro('numValWindows', f"{D['m4'].get('total_val', 0):,}")
+elif MEAS.get('dataset'):
+    d = MEAS['dataset']
+    macro('numVideos', d['n_videos'])
+    macro('numAnchors', d['n_anchor'])
+    macro('ctxWindow', d['window_size'])
+    macro('predSteps', ', '.join(str(k) for k in d['pred_steps']))
+    macro('numTrainWindows', f"{d['total_train']:,}")
+    macro('numValWindows', f"{d['total_val']:,}")
 else:
     PENDING = r'\textit{[pending]}'
     for n, v in (('numVideos', PENDING), ('numAnchors', PENDING), ('ctxWindow', PENDING),
@@ -109,6 +127,11 @@ if _psnr:
     macro('reconPSNR', f'{sum(_psnr) / len(_psnr):.2f}')
     macro('reconSSIM', f'{sum(_ssim) / len(_ssim):.4f}' if _ssim else r'\textit{[pending]}')
     macro('reconVideos', len(_psnr))
+elif MEAS.get('reconstruction'):
+    r_ = MEAS['reconstruction']
+    macro('reconPSNR', f"{r_['psnr_mean']:.2f}")
+    macro('reconSSIM', f"{r_['ssim_mean']:.4f}")
+    macro('reconVideos', 1)
 else:
     macro('reconPSNR', r'\textit{[pending]}')
     macro('reconSSIM', r'\textit{[pending]}')
@@ -117,9 +140,28 @@ else:
 if D['m6'] and D['m6'].get('hypotheses'):
     macro('calibCorr', f"{D['m6']['hypotheses'].get('spread_error_correlation', float('nan')):.2f}")
     macro('growthExp', f"{D['m6'].get('rollout_growth_exponent', float('nan')):.2f}")
+elif MEAS.get('uncertainty'):
+    macro('calibCorr', f"{MEAS['uncertainty']['spread_error_correlation']:.2f}")
+    macro('growthExp', f"{MEAS['rollout']['growth_exponent']:.2f}")
 else:
     macro('calibCorr', r'\textit{[pending]}')
     macro('growthExp', r'\textit{[pending]}')
+if MEAS.get('training'):
+    t_ = MEAS['training']
+    macro('numParams', f"{t_['parameters']:,}")
+    macro('bestEpoch', t_['best_epoch_approx'])
+if MEAS.get('direction'):
+    macro('cosOne', f"{MEAS['direction']['cosine_by_step']['1']:+.2f}")
+    macro('cosThree', f"{MEAS['direction']['cosine_by_step']['3']:+.2f}")
+    macro('cosTen', f"{MEAS['direction']['cosine_by_step']['10']:+.2f}")
+if MEAS.get('image_space'):
+    i_ = MEAS['image_space']
+    macro('imReconPSNR', f"{i_['reconstruction_psnr']:.2f}")
+    macro('imPredPSNR', f"{i_['predicted_psnr']:.2f}")
+    macro('imNaivePSNR', f"{i_['naive_psnr']:.2f}")
+if MEAS.get('timeline'):
+    macro('driftRho', f"{MEAS['timeline']['drift_rho']:+.2f}")
+    macro('driftP', f"{MEAS['timeline']['drift_p']:.3f}")
 W('')
 
 # ── Table 0: reconstruction quality, ours against published figures ──
@@ -136,6 +178,10 @@ W(r'Deform3DGS~\cite{yang2024deform3dgs} & stereo & 30.48 & -- \\ \hline')
 if _psnr:
     W(rf"Ours & \textbf{{monocular}} & {sum(_psnr) / len(_psnr):.2f} & "
       rf"{(sum(_ssim) / len(_ssim)) if _ssim else float('nan'):.4f} \\ \hline")
+elif MEAS.get('reconstruction'):
+    _r = MEAS['reconstruction']
+    W(rf"Ours & \textbf{{monocular}} & {_r['psnr_mean']:.2f} & {_r['ssim_mean']:.4f} "
+      rf"\\ \hline")
 else:
     W(r'Ours & \textbf{monocular} & \textit{[pending]} & \textit{[pending]} \\ \hline')
 W(r'\end{tabular}\end{table}')
@@ -168,9 +214,40 @@ if D['m7']:
         W(r'\hline')
     W(r'\end{tabular}\end{table*}')
     W('')
+elif MEAS.get('comparison'):
+    c = MEAS['comparison']
+    hs = sorted({h for m in c['methods'].values() for h in m}, key=int)
+    W(r'\begin{table}[t]\centering')
+    W(r'\caption{Prediction accuracy against classical estimators, Chamfer Distance, lower '
+      r'is better. Transcribed from the Module 6 evaluation rather than read from a result '
+      r'file, and restricted to three methods; the full comparison against learned '
+      r'predictors requires Module 7.}\label{tab:comparison}')
+    W(r'\begin{tabular}{l' + 'r' * len(hs) + r'}\hline')
+    W('Method & ' + ' & '.join(rf'$k{{=}}{h}$' for h in hs) + r'\\ \hline')
+    best = {h: min(c['methods'][m][h] for m in c['methods']) for h in hs}
+    for name, vals in c['methods'].items():
+        cells = [(rf'\textbf{{{vals[h]:.4f}}}' if vals[h] == best[h] else f'{vals[h]:.4f}')
+                 for h in hs]
+        W(esc(name) + ' & ' + ' & '.join(cells) + r'\\')
+    W(r'\hline\end{tabular}\end{table}')
+    W('')
 else:
     placeholder('tab:comparison', 'Comparison against baselines.',
                 'Pending: run Module 7 (module7\\_comparison.json not found).')
+
+# ── Table 1b: direction vs magnitude, the decisive measurement ───────
+if MEAS.get('direction'):
+    d = MEAS['direction']['cosine_by_step']
+    W(r'\begin{table}[t]\centering')
+    W(r'\caption{Directional agreement between predicted and true displacement, by '
+      r'prediction horizon. A model that had learned nothing would sit near zero at every '
+      r'horizon.}\label{tab:direction}')
+    W(r'\begin{tabular}{l' + 'r' * len(d) + r'}\hline')
+    W('Horizon $k$ & ' + ' & '.join(str(h) for h in sorted(d, key=int)) + r'\\')
+    W(r'$\cos(\hat{\Delta}, \Delta)$ & '
+      + ' & '.join(f'{d[h]:+.2f}' for h in sorted(d, key=int)) + r'\\ \hline')
+    W(r'\end{tabular}\end{table}')
+    W('')
 
 # ── Table 2: inference cost vs accuracy ──────────────────────────────
 if D['m8'] and D['m8']['results'].get('A_inference'):
