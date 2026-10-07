@@ -15,3 +15,23 @@ __pycache__/
 fyp-1/module-4-5-explanation-references/.venv/
 fyp-1/module-4-5-explanation/node_modules/
 fyp-1/report/node_modules/
+
+# LibreOffice lock files (created while a .docx is open)
+.~lock.*#
+
+# LaTeX build artefacts and auto-generated tables (regenerate with make_tables.py)
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.pdf
+# ...except the manuscript itself, which is a deliverable people need to open
+# from the repository without a LaTeX toolchain.
+!paper/main.pdf
+paper/generated_macros.tex
+paper/generated_tables.tex
+
+# tectonic binary downloaded by paper/build.sh
+paper/tectonic
+paper/tectonic.tar.gz
