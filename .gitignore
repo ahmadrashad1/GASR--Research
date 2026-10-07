@@ -26,6 +26,9 @@ paper/*.blg
 paper/*.log
 paper/*.out
 paper/*.pdf
+# ...except the manuscript itself, which is a deliverable people need to open
+# from the repository without a LaTeX toolchain.
+!paper/main.pdf
 paper/generated_macros.tex
 paper/generated_tables.tex
 
