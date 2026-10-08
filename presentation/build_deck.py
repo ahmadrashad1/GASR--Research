@@ -145,9 +145,11 @@ def _render(name, number):
 
 def emit(order):
     missing = [n for n in order if n not in _pages]
-    extra = [n for n in _pages if n not in order]
-    if missing or extra:
-        raise SystemExit(f'ORDER mismatch -- missing: {missing}, never shown: {extra}')
+    if missing:
+        raise SystemExit(f'ORDER names slides that do not exist: {missing}')
+    held = [n for n in _pages if n not in order]
+    if held:
+        print(f'  held back ({len(held)}): ' + ', '.join(held))
     for i, name in enumerate(order, 1):
         _render(name, i)
 
@@ -442,8 +444,13 @@ arch.append(box(12.3, 14.6, 12.7, 1.1,
 arch.append(arrow(31.7, 7.6, 31.7, 11.85, GREY))
 arch.append(box(26.2, 9.0, 5.1, 1.0, [('checkpoint', pstyle(10, GREY, italic=True,
                                                             align='right'))]))
-slide('Architecture', title_bar('Architecture — Modules 5 and 6', 'architecture')
-      + image(3.9, 3.75, 26.1, 13.28, 'arch_plate.png'),
+slide('Architecture', title_bar('Architecture — Modules 5 and 6',
+                                'progress  1 / 3  ·  methodology')
+      + box(1.6, 3.55, 30.7, 1.0,
+            [('Given the last 4 frames of 512 tracked points, predict their displacement '
+              '1–3 frames ahead — trained on 10 videos, no clinical labels.',
+              pstyle(13.5, GREY))])
+      + image(4.35, 4.75, 25.2, 12.5, 'arch_plate.png'),
       notes='Module 5 trains and emits a checkpoint; Module 6 consumes it and never trains. '
             'The horizon box feeding both branches is the fix that made the objective well '
             'posed. Trace it bottom to top.')
@@ -1061,33 +1068,20 @@ slide('BasePapers', (
          'Module 7 to run. Say what each paper gives us and what it cannot do.')
 
 emit([
-    # ══ A · the mandated 4-5 minutes, uninterrupted ══════════════════
+    # ══ the mandated 4-5 minutes ═════════════════════════════════════
     'Title',           # 1   10 s
-    'Goals',           # 2   1 min   -- overview of goals / objectives
-    'Feedback',        # 3   1 min   -- faculty feedback from FYP-1, addressed
-    'Methodology',     # 4   \
-    'ResultsMetrics',  # 5    > 2 min -- progress since FYP-1
+    'Goals',           # 2   1 min   goals and objectives
+    'Feedback',        # 3   1 min   faculty feedback from FYP-1
+    'Architecture',    # 4   \\
+    'ResultsMetrics',  # 5    > 2 min  progress since FYP-1
     'BasePapers',      # 6   /
-    'Future',          # 7   1 min   -- remaining work to the final evaluation
-    # ══ B · demonstration and preliminary results ════════════════════
-    'DemoPlan',        # 8   shown while the notebook loads
+    'Future',          # 7   1 min   remaining work
+    # ══ demonstration and preliminary results ════════════════════════
+    'DemoPlan',        # 8
     'Visuals',         # 9
     'KeyFinding',      # 10
     'Uncertainty',     # 11
     'ResultsCompare',  # 12
-    # ══ C · reference, for questions only ════════════════════════════
-    'DividerRef',      # 13
-    'Architecture',    # 14
-    'Module5',         # 15
-    'Problems5',       # 16
-    'Module6',         # 17
-    'Problems6',       # 18
-    'ResultsTrain',    # 19
-    'Literature',      # 20
-    'Comparative',     # reconstruction PSNR table, held for questions
-    'Pipeline',        # 21
-    'Problem',         # 22
-    'Summary',         # 23
 ])
 
 # ════════════════════════════════════════════════════════════════════

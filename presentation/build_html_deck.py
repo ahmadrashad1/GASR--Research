@@ -377,7 +377,11 @@ slide('divider', """
 the architecture, each module in detail, the problems we hit and fixed, the training curve and
 the literature table.</p>""", 'Do not present past this slide. Jump to what a question needs.')
 
-slide('arch ref', head('Architecture', 'Architecture — Modules 5 and 6')
+slide('arch ref', head('Progress 1 / 3  ·  methodology',
+                      'Architecture — Modules 5 and 6',
+                      lead='Given the last 4 frames of 512 tracked points, predict their '
+                           'displacement 1–3 frames ahead — trained on 10 videos, '
+                           'no clinical labels.')
       + '<div class="archwrap r" style="--d:.18s">' + arch_svg.build() + '</div>',
       'Module 5 trains and emits a checkpoint; Module 6 consumes it and never trains. '
       'The horizon arrow into both branches is the fix that made the objective well posed.')
@@ -779,10 +783,12 @@ code{font-family:var(--mono);font-size:16px;color:var(--dim);letter-spacing:.04e
 
 /* architecture */
 .archwrap{margin-top:14px;width:100%;display:flex;justify-content:center}
-.archsvg{display:block;width:100%;height:auto;max-height:706px}
+.archsvg{display:block;width:100%;height:auto;max-height:668px}
 /* the architecture figure is the one slide that needs the extra vertical room */
 .slide.arch{padding-top:246px}
-.slide.arch h1{top:162px}
+.slide.arch h1{top:150px}
+.slide.arch.has-lead{padding-top:286px}
+.slide.arch .lead{top:230px;font-size:21px}
 .arch{margin-top:34px}
 .band{position:relative;padding:30px 30px 26px;margin-bottom:0;background:rgba(95,168,160,.055)}
 .band.m6{background:rgba(210,86,63,.06)}
@@ -913,9 +919,25 @@ addEventListener('touchend',function(e){
 show(parseInt((location.hash||'#1').slice(1),10)-1 || 0);
 """
 
-pager = ''.join('')
+# ── the cut ─────────────────────────────────────────────────────────
+# Built to the FYP committee's structure: goals, FYP-1 feedback, progress,
+# remaining work, then the demonstration. Indices refer to build order above;
+# the architecture figure moves up to carry the "progress" opening.
+KEEP = [1,      # Title
+        2,      # Goals and objectives          -- 1 min
+        3,      # Faculty feedback from FYP-1   -- 1 min
+        14,     # Architecture + methodology    -- progress 1/3
+        5,      # Metrics and results           -- progress 2/3
+        6,      # Base papers                   -- progress 3/3
+        7,      # Remaining work                -- 1 min
+        8, 9, 10, 11, 12]   # demonstration and preliminary results
+_held = [i for i in range(1, len(slides) + 1) if i not in KEEP]
+print(f'  kept {len(KEEP)} of {len(slides)}; held back: {_held}')
+slides = [slides[i - 1] for i in KEEP]
+
 body = []
 for idx, s in enumerate(slides, 1):
+    s = re.sub(r'data-n="[0-9]+"', 'data-n="%d"' % idx, s)
     chrome = ('' if 'class="slide title' in s or 'class="slide divider' in s
               or 'class="slide close' in s
               else f'<div class="foot">GASR · S26-017-R-GASR</div>'
