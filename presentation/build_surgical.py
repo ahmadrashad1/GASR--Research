@@ -130,16 +130,20 @@ slide('fb', head('Addressing feedback', 'Faculty feedback from FYP-1, and what w
       + rows([
           ('Implement a base paper for comparative analysis', '',
            'Two base papers implemented',
-           'PointRNN and Luo &amp; Hu <code>module7_baselines.py</code>'),
+           'PointRNN (Fan &amp; Yang, 2019) · Luo &amp; Hu (CVPR 2021) '
+           '<code>module7_baselines.py</code>'),
           ('Select a few SOTA papers and implement them', '',
-           'Eleven methods, one protocol',
-           'Five classical, five learned, plus ours <code>781 lines</code>'),
+           'Eleven methods on one protocol',
+           'Classical: zero-motion, constant velocity, constant acceleration, linear fit, '
+           'Kalman. Learned: MLP, GRU, LSTM, Transformer, PointLSTM. <code>781 lines</code>'),
           ('Detailed analysis — tuning, optimisation', '',
            'Four tuning studies',
-           'Cost/accuracy, context length, optimiser, ablations <code>module8_hpo.py</code>'),
+           'Inference cost vs accuracy · context length · optimiser sensitivity · diffusion '
+           'ablations <code>module8_hpo.py</code>'),
           ('Start a paper in IEEE or Springer format', '',
            'IEEE manuscript drafted',
-           'Six pages, 22 references <code>paper/main.pdf</code>'),
+           'Six pages, 22 references, FYP-1 and FYP-2 as one comparative study '
+           '<code>paper/main.pdf</code>'),
       ]) + """
 <div class="note-bar r" style="--d:.42s">All four are implemented and in the repository. Two still
 need their compute runs — item 1 on the remaining-work slide.</div>""",
