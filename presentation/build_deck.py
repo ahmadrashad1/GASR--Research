@@ -915,17 +915,17 @@ slide('Methodology', (
 # ── metrics and results ─────────────────────────────────────────────
 slide('ResultsMetrics', (
     title_bar('Metrics chosen, and what they measured', 'progress  2 / 3') +
-    box(1.6, 3.8, 15.0, 0.9, [('Why these metrics', pstyle(13.5, TEAL2, True))]) +
-    box(1.6, 4.8, 15.0, 4.3, [
-        (t, pstyle(12, INK, space_after=0.18)) for t in [
-            'Chamfer Distance  \u2014  correspondence-free. Primary metric.',
-            'But it cannot separate "learned nothing" from "learned the',
-            'direction, wrong distance". Both score the same.',
-            'Directional cosine  \u2014  separates exactly those two.',
-            'Spread\u2013error correlation  \u2014  is the uncertainty calibrated?',
-            'Mean Point Error, PSNR / SSIM  \u2014  reported alongside.']],
+    box(1.6, 3.8, 15.0, 0.9, [('The three questions we measure', pstyle(13.5, TEAL2, True))]) +
+    box(1.6, 4.8, 15.0, 4.6, [
+        (t, pstyle(12, INK, space_after=0.2)) for t in [
+            'Is the predicted shape in the right place?   \u2014  Chamfer Distance',
+            'Is the motion pointing the right way?   \u2014  directional cosine',
+            'Does the model know when it is unsure?   \u2014  spread vs. error',
+            '',
+            'We need the second one because a shape score alone cannot tell',
+            '"learned nothing" from "right direction, wrong distance".']],
         fill=PAPER, valign='top') +
-    box(17.6, 3.8, 14.7, 0.9, [('What we measured', pstyle(13.5, BRICK, True))]) +
+    box(17.6, 3.8, 14.7, 0.9, [('What the answers were', pstyle(13.5, BRICK, True))]) +
     card(17.6, 4.8, 14.7, 1.9, 'Accuracy  \u2014  not yet ahead', [
         'CD 0.01568 vs naive 0.01557. Constant',
         'velocity beats both, on all 10 videos.'], BRICK, fill='F3E7E4') +
@@ -996,6 +996,57 @@ slide('DividerRef', (
 # ════════════════════════════════════════════════════════════════════
 # deck order — one contiguous block per presenter
 # ════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
+# the base papers, compared qualitatively
+# ════════════════════════════════════════════════════════════════════
+bp_n = pstyle(13, TEAL, True, space_after=0.04)
+bp_d = pstyle(11.5, INK)
+bp_s = pstyle(12.5, BRICK, True, space_after=0.04)
+bp_u = pstyle(11.5, INK)
+
+
+def bp_row(y, name, does, stops, ours):
+    h = 2.6
+    return (box(1.6, y, 13.4, h, [(name, bp_n), (does, bp_d)],
+                fill='F0F6F5', valign='middle') +
+            arrow(15.2, y + h / 2, 15.9, y + h / 2, GREY) +
+            box(16.1, y, 16.2, h, [(stops, bp_s), (ours, bp_u)],
+                fill='F7F2F1', valign='middle'))
+
+
+slide('BasePapers', (
+    title_bar('What we build on, and where we go past it',
+              'progress  3 / 3  \u00b7  the base papers') +
+    box(1.6, 3.8, 13.4, 0.8, [('The work we build on', pstyle(12, TEAL2, True))]) +
+    box(16.1, 3.8, 16.2, 0.8, [('Where it stops, and what we add',
+                                pstyle(12, BRICK, True))]) +
+    bp_row(4.7, 'EndoGaussian \u00b7 Deform3DGS  \u2014  surgical reconstruction',
+           'Reconstruct a surgical scene in 3D at high fidelity, using a stereo camera.',
+           'They only ever describe what has already happened.',
+           'We reach comparable fidelity from a single camera \u2014 and then predict '
+           'forward from it.') +
+    bp_row(7.55, 'PointRNN  \u2014  point-cloud forecasting',
+           'Predicts where a moving 3D point cloud will be next. Our closest published '
+           'method, and our main learned baseline.',
+           'Built for rigid outdoor scenes, and gives one answer with no confidence.',
+           'Same task on deforming soft tissue, and ours says how much to trust '
+           'each answer.') +
+    bp_row(10.4, 'Luo & Hu (CVPR 2021)  \u2014  point-cloud diffusion',
+           'The first diffusion model to generate 3D point clouds.',
+           'It generates plausible shapes; it does not predict a future.',
+           'Our denoiser is that idea made conditional and temporal, so it forecasts '
+           'rather than invents.') +
+    bp_row(13.25, 'TPG-VAE \u00b7 SurgVista  \u2014  surgical anticipation',
+           'Do predict the surgical future, and do it well.',
+           'In 2D pixels, and only when told in advance what the instrument will do.',
+           'We predict 3D geometry, and we are not told the action.') +
+    box(1.6, 16.1, 30.7, 1.2,
+        [('No published method does all of it at once \u2014 predict the future, in 3D, '
+          'on soft tissue, from a single camera, and say how confident it is.',
+          pstyle(13, GOLD, True, italic=True))])
+), notes='The comparison slide. Qualitative on purpose -- the numeric comparison needs '
+         'Module 7 to run. Say what each paper gives us and what it cannot do.')
+
 emit([
     # ══ A · the mandated 4-5 minutes, uninterrupted ══════════════════
     'Title',           # 1   10 s
@@ -1003,7 +1054,7 @@ emit([
     'Feedback',        # 3   1 min   -- faculty feedback from FYP-1, addressed
     'Methodology',     # 4   \
     'ResultsMetrics',  # 5    > 2 min -- progress since FYP-1
-    'Comparative',     # 6   /
+    'BasePapers',      # 6   /
     'Future',          # 7   1 min   -- remaining work to the final evaluation
     # ══ B · demonstration and preliminary results ════════════════════
     'DemoPlan',        # 8   shown while the notebook loads
@@ -1020,6 +1071,7 @@ emit([
     'Problems6',       # 18
     'ResultsTrain',    # 19
     'Literature',      # 20
+    'Comparative',     # reconstruction PSNR table, held for questions
     'Pipeline',        # 21
     'Problem',         # 22
     'Summary',         # 23
