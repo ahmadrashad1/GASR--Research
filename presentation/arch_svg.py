@@ -9,18 +9,20 @@ module6_prediction.py for the right one.
 """
 
 # paper-figure palette
-PAPER   = '#F6F3EC'
-INK     = '#1C1C1C'
-LINE    = '#2A2A2A'
-GREY_T  = '#5C5C5C'
-CONT_F, CONT_S = '#EDEAE3', '#C6C1B7'
-PINK    = ('#F7D6D8', '#C28A8E')   # inputs / encoders
-ORANGE  = ('#FBDCB2', '#C4934D')   # attention
-BLUE    = ('#C9DFF2', '#6E9BC4')   # feed-forward / compute
-OLIVE   = ('#E9EFC6', '#A4B36C')   # add & norm
-PURPLE  = ('#D8D1E8', '#8E85B6')   # linear
-GREEN   = ('#C8E3BB', '#7CA56D')   # outputs
-WHITE   = ('#FFFFFF', '#9A958C')
+# operating-room palette: near-black plate, blood red reserved for the blocks
+# that carry the argument, flesh for secondary, steel for plain compute.
+PAPER   = '#0E0E12'
+INK     = '#EDEDF2'
+LINE    = '#8A8A94'
+GREY_T  = '#7C7C86'
+CONT_F, CONT_S = '#16161B', '#30303A'
+PINK    = ('#1A1216', '#C98276')   # inputs / encoders   — flesh
+ORANGE  = ('#2C0C0C', '#D62828')   # attention           — blood
+BLUE    = ('#14181E', '#6F8796')   # feed-forward        — steel
+OLIVE   = ('#15151A', '#56565F')   # add & norm          — neutral
+PURPLE  = ('#1A1216', '#C98276')   # linear              — flesh
+GREEN   = ('#2C0C0C', '#D62828')   # outputs             — blood
+WHITE   = ('#121216', '#4C4C56')
 
 P = []
 
@@ -85,7 +87,7 @@ def build():
 <marker id="a" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5"
  orient="auto-start-reverse"><path d="M0,1.2 L8.5,5 L0,8.8 z" fill="{LINE}"/></marker>
 <marker id="p" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5"
- orient="auto-start-reverse"><path d="M0,1.2 L8.5,5 L0,8.8 z" fill="#8E85B6"/></marker>
+ orient="auto-start-reverse"><path d="M0,1.2 L8.5,5 L0,8.8 z" fill="#D62828"/></marker>
 </defs>''')
     P.append(f'<rect x="0" y="0" width="780" height="812" rx="6" fill="{PAPER}"/>')
     P.append(f'<rect x="840" y="0" width="780" height="812" rx="6" fill="{PAPER}"/>')
@@ -202,7 +204,7 @@ def build():
     txt(C + 170, 704, 'fresh noise per sample', 'shape')
 
     # checkpoint crosses the gap between the plates
-    path('M 782 557 H 1074', col='#5FA8A0')
+    path('M 782 557 H 1074', col='#D62828')
     P.append('<text x="808" y="545" class="ckpt" text-anchor="middle" '
              'transform="rotate(-90 808 545)">trained checkpoint</text>')
 
@@ -219,7 +221,7 @@ def build():
 .grp{{font-family:'IBM Plex Sans',Helvetica,sans-serif;font-size:12.5px;fill:{GREY_T};
   text-anchor:middle;letter-spacing:.08em}}
 .note{{font-family:'IBM Plex Mono',monospace;font-size:10.5px;fill:{GREY_T};text-anchor:middle}}
-.ckpt{{font-family:'IBM Plex Mono',monospace;font-size:11px;fill:#5FA8A0;
+.ckpt{{font-family:'IBM Plex Mono',monospace;font-size:11px;fill:#D62828;
   letter-spacing:.12em}}
 """
     return (f'<svg class="archsvg" viewBox="0 0 1620 824" width="100%" '
