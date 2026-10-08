@@ -95,6 +95,19 @@ def line(x1, y1, x2, y2, color=RULE, w=0.03):
             f'svg:x2="{x2}cm" svg:y2="{y2}cm"/>')
 
 
+def image(x, y, w, h, path):
+    """Embed a PNG directly in the flat ODF so the deck stays a single file."""
+    import base64
+    data = base64.b64encode(
+        open(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), 'rb').read()
+    ).decode()
+    g = gstyle(None, 'none')
+    return (f'<draw:frame draw:style-name="{g}" svg:x="{x}cm" svg:y="{y}cm" '
+            f'svg:width="{w}cm" svg:height="{h}cm">'
+            f'<draw:image><office:binary-data>{data}</office:binary-data></draw:image>'
+            f'</draw:frame>')
+
+
 _pages = {}
 
 
@@ -430,13 +443,13 @@ arch.append(arrow(31.7, 7.6, 31.7, 11.85, GREY))
 arch.append(box(26.2, 9.0, 5.1, 1.0, [('checkpoint', pstyle(10, GREY, italic=True,
                                                             align='right'))]))
 slide('Architecture', title_bar('Architecture — Modules 5 and 6', 'architecture')
-      + ''.join(arch),
-      notes='One slide for both modules. Module 5 trains and emits a checkpoint; Module 6 '
-            'consumes that checkpoint and never trains. The horizon conditioning arrow is '
-            'the fix that made the objective well-posed.')
+      + image(3.9, 3.75, 26.1, 13.28, 'arch_plate.png'),
+      notes='Module 5 trains and emits a checkpoint; Module 6 consumes it and never trains. '
+            'The horizon box feeding both branches is the fix that made the objective well '
+            'posed. Trace it bottom to top.')
 
 # ════════════════════════════════════════════════════════════════════
-# 8, 9 — problems and solutions
+# problems and solutions
 # ════════════════════════════════════════════════════════════════════
 ph = pstyle(12.5, BRICK, True, space_after=0.05)
 pb = pstyle(11.5, INK, space_after=0.0)

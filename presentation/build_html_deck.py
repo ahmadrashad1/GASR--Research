@@ -778,8 +778,11 @@ code{font-family:var(--mono);font-size:16px;color:var(--dim);letter-spacing:.04e
 .mz{color:var(--dim);font-weight:400}
 
 /* architecture */
-.archwrap{margin-top:18px;width:100%}
-.archsvg{display:block;width:100%;height:auto;max-height:640px}
+.archwrap{margin-top:14px;width:100%;display:flex;justify-content:center}
+.archsvg{display:block;width:100%;height:auto;max-height:706px}
+/* the architecture figure is the one slide that needs the extra vertical room */
+.slide.arch{padding-top:246px}
+.slide.arch h1{top:162px}
 .arch{margin-top:34px}
 .band{position:relative;padding:30px 30px 26px;margin-bottom:0;background:rgba(95,168,160,.055)}
 .band.m6{background:rgba(210,86,63,.06)}
