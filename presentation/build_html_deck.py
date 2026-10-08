@@ -14,7 +14,9 @@ refers to the predicted future.
 Slides keep a 1:1 mapping with the PowerPoint deck and the speaking script,
 so every slide number quoted in the script still resolves.
 """
-import base64, html, pathlib, random, re
+import base64, html, pathlib, random, re, sys
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import arch_svg
 
 HERE = pathlib.Path(__file__).parent
 SKILL = pathlib.Path('/home/ahmadrashad/.claude/plugins/cache/frontend-slides'
@@ -376,20 +378,9 @@ the architecture, each module in detail, the problems we hit and fixed, the trai
 the literature table.</p>""", 'Do not present past this slide. Jump to what a question needs.')
 
 slide('arch ref', head('Architecture', 'Architecture — Modules 5 and 6')
-      + '<div class="arch r" style="--d:.2s">'
-      + band('Module 5 — training', 'm5', [
-          ('Past 4 frames', '(B, 4, 512, 3)'), ('Point encoder', 'shared MLP'),
-          ('Temporal transformer', '3 layers, 8 heads'), ('Cross-attention', 'both directions'),
-          ('Output head', 'predicted velocity'), ('Trained checkpoint', '')],
-          caption='conditioned on: diffusion step <em>t</em> · horizon k ∈ {1,2,3}')
-      + '<div class="ckpt"><span>checkpoint</span></div>'
-      + band('Module 6 — inference & evaluation', 'm6', [
-          ('Trajectory replay', '+ QT0 gate'), ('DDIM sampler', '20 steps'),
-          ('Direct · Rollout · 5 futures', 'k ≤ 3 · 10 frames · uncertainty'),
-          ('Metrics · figures', 'exports for Module 7')],
-          caption='all three compared against: nothing moves · constant velocity')
-      + '</div>',
-      'Module 5 trains and emits a checkpoint; Module 6 consumes it and never trains.')
+      + '<div class="archwrap r" style="--d:.18s">' + arch_svg.build() + '</div>',
+      'Module 5 trains and emits a checkpoint; Module 6 consumes it and never trains. '
+      'The horizon arrow into both branches is the fix that made the objective well posed.')
 
 slide('ref', head('Module 5', 'Module 5 — learning how tissue moves',
                   lead='A conditional diffusion model that learns the deformation of 512 tracked '
@@ -787,6 +778,8 @@ code{font-family:var(--mono);font-size:16px;color:var(--dim);letter-spacing:.04e
 .mz{color:var(--dim);font-weight:400}
 
 /* architecture */
+.archwrap{margin-top:18px;width:100%}
+.archsvg{display:block;width:100%;height:auto;max-height:640px}
 .arch{margin-top:34px}
 .band{position:relative;padding:30px 30px 26px;margin-bottom:0;background:rgba(95,168,160,.055)}
 .band.m6{background:rgba(210,86,63,.06)}
