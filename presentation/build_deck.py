@@ -811,41 +811,30 @@ done = pstyle(11.5, TEAL, True, align='center')
 part = pstyle(11.5, GOLD, True, align='center')
 
 def objective(x, y, w, tag, head, sub, status, scolor):
-    return (box(x, y, w, 2.9, [(head, ob_h), (sub, ob_b)], fill=PAPER, valign='top') +
-            box(x, y + 3.0, w, 0.8, [(status, scolor)], fill='FFFFFF'))
+    return (box(x, y, w, 2.4, [(head, ob_h), (sub, ob_b)], fill=PAPER, valign='top') +
+            box(x, y + 2.5, w, 0.8, [(status, scolor)], fill='FFFFFF'))
 
 slide('Goals', (
     title_bar('What the project is for', 'goals and objectives') +
-    box(1.6, 3.8, 30.7, 1.5,
-        [('A surgeon operating through a single laparoscope sees a flat image of the '
-          'present moment. Our goal is a system that reconstructs the scene in 3D and '
-          'then anticipates how the tissue will deform next — from that one camera, '
-          'with no depth sensor and no clinical annotation.', pstyle(13.5, INK))],
-        fill=MINT) +
-    objective(1.6, 5.9, 7.3, 'O1', 'O1  ·  Reconstruct',
-              '4D scene geometry from monocular laparoscopic video, without stereo '
-              'input or labels.', 'COMPLETE  ·  FYP-1', done) +
-    objective(9.6, 5.9, 7.3, 'O2', 'O2  ·  Learn deformation',
-              'A self-supervised model of how tissue moves, trained on the '
-              'reconstructed geometry.', 'COMPLETE  ·  MODULE 5', done) +
-    objective(17.6, 5.9, 7.3, 'O3', 'O3  ·  Predict ahead',
-              'Future tissue geometry at 1–3 frames, with a calibrated estimate of '
-              'confidence.', 'IMPLEMENTED  ·  MODULE 6', part) +
-    objective(25.6, 5.9, 6.7, 'O4', 'O4  ·  Evaluate and position',
-              'Against classical and learned baselines, and against the published '
-              'literature.', 'IN PROGRESS  ·  M7–M8', part) +
-    box(1.6, 11.0, 30.7, 1.0, [('Research question',
-                                pstyle(13, TEAL2, True))]) +
-    box(1.6, 11.9, 30.7, 2.0,
+    box(1.6, 3.8, 30.7, 1.4,
+        [('Reconstruct a surgical scene in 3D from one laparoscope camera, then '
+          'anticipate how the tissue deforms next \u2014 with no depth sensor and no '
+          'clinical annotation.', pstyle(14.5, INK, True))], fill=MINT) +
+    objective(1.6, 5.8, 7.3, 'O1', 'O1  \u00b7  Reconstruct',
+              '4D scene geometry from monocular video.', 'COMPLETE  \u00b7  FYP-1', done) +
+    objective(9.6, 5.8, 7.3, 'O2', 'O2  \u00b7  Learn deformation',
+              'Self-supervised model of tissue motion.', 'COMPLETE  \u00b7  MODULE 5', done) +
+    objective(17.6, 5.8, 7.3, 'O3', 'O3  \u00b7  Predict ahead',
+              'Future geometry at 1\u20133 frames, with confidence.',
+              'IMPLEMENTED  \u00b7  MODULE 6', part) +
+    objective(25.6, 5.8, 6.7, 'O4', 'O4  \u00b7  Evaluate',
+              'Against baselines and the literature.', 'IN PROGRESS  \u00b7  M7\u2013M8', part) +
+    box(1.6, 10.4, 30.7, 1.0, [('Research question', pstyle(13, TEAL2, True))]) +
+    box(1.6, 11.4, 30.7, 4.6,
         [('Can future 3D tissue geometry be predicted from monocular surgical video '
-          'alone — and can the system say how much to trust each prediction?',
-          pstyle(17, INK, True, italic=True))], fill=PAPER) +
-    box(1.6, 14.4, 30.7, 2.2,
-        [('This is a research FYP. The deliverable is a methodology, a set of measured '
-          'results, and a comparison against the literature — not a product.',
-          pstyle(13, GREY, italic=True))])
-), notes='One minute. State the goal, the four objectives and their status, and the '
-         'research question. Do not drift into method here.')
+          'alone \u2014 and can the system say how much to trust each prediction?',
+          pstyle(19, INK, True, italic=True))], fill=PAPER)
+), notes='One minute. Goal, four statuses, the question. Do not drift into method.')
 
 # ── faculty feedback from the FYP-1 final evaluation ────────────────
 fb_p = pstyle(12.5, BRICK, True, space_after=0.04)
@@ -891,85 +880,72 @@ mb = pstyle(11.5, INK)
 
 slide('Methodology', (
     title_bar('The methodology, finalised', 'progress  1 / 3') +
-    box(1.6, 3.8, 30.7, 1.2,
+    box(1.6, 3.8, 30.7, 1.4,
         [('Given the last 4 frames of 512 tracked tissue points, predict their '
-          'displacement k frames ahead, for k ∈ {1, 2, 3}. No clinical labels at any '
-          'stage.', pstyle(14, INK, True))], fill=MINT) +
-    card(1.6, 5.4, 9.8, 4.5, 'Model', [
+          'displacement k frames ahead, k \u2208 {1, 2, 3}. No clinical labels, anywhere.',
+          pstyle(14.5, INK, True))], fill=MINT) +
+    card(1.6, 5.8, 9.8, 5.9, 'Model', [
         'Conditional denoising diffusion',
-        'v-prediction, cosine schedule, T = 500',
-        'Min-SNR-γ loss weighting',
-        'Temporal transformer + two-way',
-        'cross-attention · 16.3 M parameters'], TEAL2) +
-    card(12.05, 5.4, 9.8, 4.5, 'What it predicts', [
+        'v-prediction, cosine schedule',
+        'Temporal transformer with',
+        'two-way cross-attention',
+        '16.3 M parameters'], TEAL2) +
+    card(12.05, 5.8, 9.8, 5.9, 'What it predicts', [
         'The correction to constant-velocity',
-        'extrapolation, not the displacement',
-        'itself — so a degenerate model falls',
-        'back to an estimator 41% stronger',
-        'than the naive baseline.'], TEAL2) +
-    card(22.5, 5.4, 9.8, 4.5, 'How it is queried', [
+        'extrapolation \u2014 not the raw',
+        'displacement.',
+        '',
+        'So a model that learns nothing',
+        'still beats naive by 41%.'], TEAL2) +
+    card(22.5, 5.8, 9.8, 5.9, 'How it is queried', [
         'DDIM sampler, 20 steps',
-        'Direct (k ≤ 3), rollout (10 frames),',
-        'and 5 independent samples whose',
-        'spread is the uncertainty estimate.'], TEAL2) +
-    card(1.6, 10.4, 14.9, 4.0, 'Data and protocol', [
-        '10 reconstructed videos · 512 anchor points · window W = 4',
-        '5,910 training windows, 1,461 validation windows',
-        'Self-supervised throughout — the targets come from the',
-        'reconstruction, never from a human annotator.'], GOLD, fill='FBF4E6') +
-    card(17.4, 10.4, 14.9, 4.0, 'Reported where it can be checked', [
-        'The method is written up in full in the IEEE manuscript,',
-        'Section III, with every hyperparameter stated. Each number',
-        'in the paper is generated from a result file rather than',
-        'transcribed by hand.'], GOLD, fill='FBF4E6') +
-    box(1.6, 14.9, 30.7, 1.4,
-        [('Every reported metric is inverted back into physical units before it is '
-          'printed, so nothing on these slides is in normalised space.',
-          pstyle(12.5, GREY, italic=True))])
-), notes='Part of the two-minute progress section. The committee lists "not finalising '
-         'and reporting the methodology" as a failure mode -- this is the answer to it.')
+        'Direct (k \u2264 3)',
+        'Rollout (10 frames)',
+        '5 samples \u2014 their spread is',
+        'the uncertainty estimate'], TEAL2) +
+    box(1.6, 12.4, 30.7, 3.4, [
+        ('10 videos  \u00b7  7,371 windows  \u00b7  self-supervised throughout',
+         pstyle(15, INK, True)),
+        ('Targets come from the reconstruction, never from an annotator. The method is '
+         'written up in full in Section III of the IEEE manuscript, every '
+         'hyperparameter stated.', pstyle(12.5, GREY))], fill=PAPER)
+), notes='40 seconds. Problem statement, the model, the residual target, the data line. '
+         'Let the cards carry the detail -- do not read them out.')
 
 # ── metrics and results ─────────────────────────────────────────────
 slide('ResultsMetrics', (
     title_bar('Metrics chosen, and what they measured', 'progress  2 / 3') +
     box(1.6, 3.8, 15.0, 0.9, [('Why these metrics', pstyle(13.5, TEAL2, True))]) +
-    box(1.6, 4.8, 15.0, 5.3, [
-        (t, pstyle(11.5, INK, space_after=0.1)) for t in [
-            'Chamfer Distance  —  correspondence-free, so it does not assume point',
-            'identity holds across frames. Primary accuracy metric.',
-            'Mean Point Error  —  correspondence-aware, reported alongside it.',
-            'Directional cosine  —  separates "learned nothing" from "learned the',
-            'direction but the wrong distance". Chamfer Distance alone cannot.',
-            'Spread–error correlation  —  tests whether uncertainty is calibrated.',
-            'PSNR / SSIM  —  image space, against the reconstruction ceiling.']],
+    box(1.6, 4.8, 15.0, 4.3, [
+        (t, pstyle(12, INK, space_after=0.18)) for t in [
+            'Chamfer Distance  \u2014  correspondence-free. Primary metric.',
+            'But it cannot separate "learned nothing" from "learned the',
+            'direction, wrong distance". Both score the same.',
+            'Directional cosine  \u2014  separates exactly those two.',
+            'Spread\u2013error correlation  \u2014  is the uncertainty calibrated?',
+            'Mean Point Error, PSNR / SSIM  \u2014  reported alongside.']],
         fill=PAPER, valign='top') +
     box(17.6, 3.8, 14.7, 0.9, [('What we measured', pstyle(13.5, BRICK, True))]) +
-    card(17.6, 4.8, 14.7, 2.4, 'Accuracy  —  not yet ahead', [
-        'CD 0.01568 against a naive baseline of 0.01557.',
-        'Constant velocity beats both, on all 10 videos.'], BRICK, fill='F3E7E4') +
-    card(17.6, 7.5, 14.7, 2.6, 'Direction  —  clearly learned', [
-        'Cosine +0.57 at t+1, +0.40 at t+2, +0.26 at t+3.',
-        'A model that learned nothing would read 0.00.',
-        'So the failure is magnitude, not direction.'], TEAL2) +
-    card(17.6, 10.4, 14.7, 2.6, 'Uncertainty  —  calibrated', [
-        'Spread across 5 sampled futures correlates with',
-        'realised error at r = 0.69. No baseline in the',
-        'comparison provides this at all.'], TEAL2) +
-    box(1.6, 10.4, 15.0, 2.6, [
-        ('Six quality tests, run as a suite', pstyle(13, TEAL2, True)),
-        ('QT0 verifies the evaluation data is the data the model trained on, and runs '
-         'as a gate before anything is predicted. QT1–QT5 cover short-horizon '
-         'accuracy, rollout growth, diversity, smoothness and cross-scene '
-         'generalisation.', pstyle(11.5, INK))], fill=PAPER) +
-    box(1.6, 13.4, 30.7, 2.6, [
-        ('Two explanations were tested and eliminated before we drew any conclusion',
+    card(17.6, 4.8, 14.7, 1.9, 'Accuracy  \u2014  not yet ahead', [
+        'CD 0.01568 vs naive 0.01557. Constant',
+        'velocity beats both, on all 10 videos.'], BRICK, fill='F3E7E4') +
+    card(17.6, 6.9, 14.7, 1.9, 'Direction  \u2014  clearly learned', [
+        'Cosine +0.57 at t+1. Nothing-learned',
+        'would read 0.00. So: magnitude, not direction.'], TEAL2) +
+    card(17.6, 9.0, 14.7, 1.8, 'Uncertainty  \u2014  calibrated', [
+        'Spread vs realised error, r = 0.69.',
+        'No baseline provides this at all.'], TEAL2) +
+    box(1.6, 11.6, 30.7, 2.6, [
+        ('Two explanations tested and eliminated before we concluded anything',
          pstyle(13.5, INK, True)),
-        ('•  Error does not grow with distance from the training frames  '
-         '(ρ = +0.02, p = 0.61)', pstyle(12.5, INK)),
-        ('•  Dropped preprocessing frames do not explain it  '
-         '(333 origins checked, 0 drops found)', pstyle(12.5, INK))], fill=PAPER)
-), notes='Part of the two-minute progress section. Valid metrics and adequate results '
-         'are both on the committee failure list. Lead with why each metric was chosen.')
+        ('No drift (\u03c1 = +0.02, p = 0.61)   \u00b7   no dropped frames '
+         '(333 origins checked, 0 found)', pstyle(12.5, INK))], fill=PAPER) +
+    box(1.6, 14.6, 30.7, 1.8, [
+        ('Six quality tests run as a suite. QT0 verifies the evaluation data is the '
+         'data the model trained on, and gates everything downstream.',
+         pstyle(12, GREY, italic=True))])
+), notes='45 seconds. Lead with WHY the metrics -- that is what is being marked. '
+         'Then the three result cards. Do not read the left panel out.')
 
 # ── the live demonstration ──────────────────────────────────────────
 dn = pstyle(22, 'FFFFFF', True, align='center', font='Cambria')
