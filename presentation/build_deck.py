@@ -95,12 +95,17 @@ def line(x1, y1, x2, y2, color=RULE, w=0.03):
             f'svg:x2="{x2}cm" svg:y2="{y2}cm"/>')
 
 
-_slideno = [0]
+_pages = {}
 
 
 def slide(name, content, dark=False, notes=''):
+    """Record a slide. Position in the deck is decided by ORDER, not by call order."""
+    _pages[name] = (content, dark, notes)
+
+
+def _render(name, number):
+    content, dark, notes = _pages[name]
     bg = INK if dark else 'FFFFFF'
-    _slideno[0] += 1
     if not dark:
         # Anchors the bottom margin, so space below the content reads as a deliberate
         # margin rather than an unfinished slide.
@@ -109,7 +114,7 @@ def slide(name, content, dark=False, notes=''):
         content += (line(1.6, 17.45, 32.3, 17.45, 'ECF1F0') +
                     box(1.6, 17.55, 22, 0.75,
                         [('GASR  /  FYP-2 Mid Evaluation  /  Modules 5 and 6', fl)]) +
-                    box(26.3, 17.55, 6.0, 0.75, [(str(_slideno[0]), fr)]))
+                    box(26.3, 17.55, 6.0, 0.75, [(str(number), fr)]))
     n = uid('dp')
     styles.append(f'<style:style style:name="{n}" style:family="drawing-page">'
                   f'<style:drawing-page-properties draw:fill="solid" '
@@ -123,6 +128,15 @@ def slide(name, content, dark=False, notes=''):
                 f'</draw:text-box></draw:frame></presentation:notes>')
     bodies.append(f'<draw:page draw:name="{esc(name)}" draw:master-page-name="Default" '
                   f'draw:style-name="{n}">{content}{note}</draw:page>')
+
+
+def emit(order):
+    missing = [n for n in order if n not in _pages]
+    extra = [n for n in _pages if n not in order]
+    if missing or extra:
+        raise SystemExit(f'ORDER mismatch -- missing: {missing}, never shown: {extra}')
+    for i, name in enumerate(order, 1):
+        _render(name, i)
 
 
 # ── reusable slide furniture ────────────────────────────────────────
@@ -482,14 +496,14 @@ slide('Problems6', (
          'Taking the first N windows drew almost entirely from one recording.',
          'Evenly spread the evaluation set',
          'Every video contributes; earlier scores had been 4× too optimistic.'),
-        ('Nothing on screen was actually a prediction',
-         'Every predicted frame was paired with a frame that already existed.',
-         'Forecast past the end of the video',
-         'Predicted clip runs 12 frames beyond the last recorded frame.'),
-        ('Predicted motion was invisible',
-         'At 1–2 pixels, predicted and real frames look identical.',
-         'Magnified motion arrows',
-         'Magnification printed on every panel; never applied to any number.'),
+        ('Our constant-acceleration baseline was wrong',
+         'A backward difference gives the velocity at t − ½, not at t.',
+         'Derive the velocity at t properly',
+         'v = (3\u00b7x(t) − 4\u00b7x(t−1) + x(t−2)) / 2, verified exact on quadratic motion.'),
+        ('What we called a Kalman filter was not one',
+         'It was an alpha–beta filter with fixed gains and no covariance.',
+         'Implement a real two-state Kalman filter',
+         'Full 2×2 covariance; recovers a known velocity to 2.6e−06.'),
     ])
 ), notes='Module 6 problems are mostly about measurement integrity rather than modelling. '
          'That is the right emphasis for an evaluation module.')
@@ -631,6 +645,50 @@ slide('Uncertainty', (
          'Mention the caveat before the panel raises it.')
 
 # ════════════════════════════════════════════════════════════════════
+# seeing the prediction — rendering, visualisation, forecast
+# ════════════════════════════════════════════════════════════════════
+slide('Visuals', (
+    title_bar('Making the prediction visible', 'rendering and visualisation') +
+    box(1.6, 3.9, 30.7, 1.1,
+        [('A prediction moves 512 points. A picture needs all 58,000. Bridging that gap '
+          'is what turns a metric into something a surgeon could look at.',
+          pstyle(14, INK))]) +
+    card(1.6, 5.3, 9.8, 4.2, 'From points to pixels', [
+        'Predicted motion of the 512 tracked',
+        'points is carried onto every Gaussian',
+        'by distance-weighted interpolation,',
+        'so a tracked point receives its own',
+        'motion exactly.'], TEAL2) +
+    card(12.05, 5.3, 9.8, 4.2, 'The renderer, re-verified', [
+        'Module 2\u2019s renderer was re-implemented',
+        'here, including degree-3 spherical',
+        'harmonics. We checked it against the',
+        'original rather than assuming they',
+        'matched.'], TEAL2) +
+    card(22.5, 5.3, 9.8, 4.2, 'Six panels per moment', [
+        'Real frame, reconstruction ceiling,',
+        'prediction, naive baseline, motion',
+        'overlay and an amplified error map \u2014',
+        'with image metrics over the full frame',
+        'and over tissue alone.'], TEAL2) +
+    card(1.6, 9.9, 14.9, 3.6, 'Predicted motion was invisible', [
+        'At 1\u20132 pixels, predicted and real frames look identical.',
+        'Motion is drawn as arrows coloured by agreement with truth,',
+        'magnified automatically \u2014 and the factor is printed on every',
+        'panel, never applied to any reported number.'], GOLD, fill='FBF4E6') +
+    card(17.4, 9.9, 14.9, 3.6, 'Nothing on screen was a prediction', [
+        'Every predicted frame used to be paired with a frame that',
+        'already existed. The forecast now runs 12 frames past the end',
+        'of the recording: the real-video panel stops and says so,',
+        'while the predicted panel keeps going.'], GOLD, fill='FBF4E6') +
+    stat(1.6, 13.8, 9.8, '30.04', 'reconstruction ceiling, dB') +
+    stat(12.05, 13.8, 9.8, '26.79', 'our prediction, dB') +
+    stat(22.5, 13.8, 9.8, '26.74', 'naive baseline, dB')
+), notes='This is the demo material. The image-space gap between prediction and naive is '
+         'small for the same reason the geometric one is: magnitude, not direction. '
+         'Offer to play the forecast video in questions.')
+
+# ════════════════════════════════════════════════════════════════════
 # 14 — comparative research results
 # ════════════════════════════════════════════════════════════════════
 rh = pstyle(11.5, 'FFFFFF', True)
@@ -743,6 +801,33 @@ slide('Summary', (
          pstyle(12, '8FB3B0'))], valign='top')
 ), dark=True, notes='Close on the honest summary. If asked "why did you not beat the '
                     'baseline", the answer is on this slide and on the key-finding slide.')
+
+# ════════════════════════════════════════════════════════════════════
+# deck order — one contiguous block per presenter
+# ════════════════════════════════════════════════════════════════════
+emit([
+    # ── Ahmad Rashad (22i-1175) · slides 1-6 · the problem and Module 5 ──
+    'Title',
+    'Problem',
+    'Pipeline',
+    'Module5',
+    'Problems5',
+    # ends Ahmad's block on the full picture, which hands straight over to Module 6
+    'Architecture',
+    # ── Shehroz (22i-0771) · slides 7-12 · Module 6 and every measured result ──
+    'Module6',
+    'Problems6',
+    'ResultsTrain',
+    'ResultsCompare',
+    'KeyFinding',
+    'Uncertainty',
+    # ── Humair Khan (22i-2623) · slides 13-17 · the output, the positioning, the close ──
+    'Visuals',
+    'Literature',
+    'Comparative',
+    'Future',
+    'Summary',
+])
 
 # ════════════════════════════════════════════════════════════════════
 FODP = f'''<?xml version="1.0" encoding="UTF-8"?>
