@@ -113,7 +113,7 @@ def _render(name, number):
         fr = pstyle(9.5, 'A3B2B0', align='right')
         content += (line(1.6, 17.45, 32.3, 17.45, 'ECF1F0') +
                     box(1.6, 17.55, 22, 0.75,
-                        [('GASR  /  FYP-2 Mid Evaluation  /  Modules 5 and 6', fl)]) +
+                        [('GASR  /  S26-017-R-GASR  /  FYP-2 Mid Evaluation', fl)]) +
                     box(26.3, 17.55, 6.0, 0.75, [(str(number), fr)]))
     n = uid('dp')
     styles.append(f'<style:style style:name="{n}" style:family="drawing-page">'
@@ -746,16 +746,16 @@ nn = pstyle(26, 'FFFFFF', True, align='center', font='Cambria')
 fh = pstyle(14, INK, True, space_after=0.08)
 fb = pstyle(12.5, GREY)
 items = [
-    ('1', 'Evaluate the two fixes already implemented',
-     'Calibration needs no retraining and should move accuracy below naive.'),
-    ('2', 'Retrain on the constant-velocity residual',
-     'Raises the model’s floor from the naive baseline to a 41% stronger one.'),
-    ('3', 'Hold out an entire video for testing',
-     'Removes the optimism of selecting and reporting on the same frames.'),
-    ('4', 'Complete the 11-method comparison',
-     'Modules 7 and 8 are implemented; the runs remain.'),
-    ('5', 'Grow the dataset beyond 10 short recordings',
-     'The overfitting we measured is consistent with corpus size.'),
+    ('1', 'Run the 11-method comparison and the HPO studies',
+     'Modules 7 and 8 are written and tested. Only the compute runs remain.'),
+    ('2', 'Evaluate the two corrections already implemented',
+     'Magnitude calibration needs no retraining; the residual target needs one retrain.'),
+    ('3', 'Move to leave-one-video-out evaluation',
+     'Removes the optimism of selecting and reporting on the same recordings.'),
+    ('4', 'Fold the completed results into the manuscript',
+     'The IEEE draft is written with the tables generated from result files.'),
+    ('5', 'Submit, and extend the corpus beyond 10 recordings',
+     'The overfitting we measured is consistent with a corpus this size.'),
 ]
 fy = 4.4
 fcontent = []
@@ -764,7 +764,7 @@ for num, head, sub in items:
     fcontent.append(box(1.6, fy, 1.9, 1.9, [(num, nn)]))
     fcontent.append(box(3.9, fy, 28.4, 1.9, [(head, fh), (sub, fb)], fill=PAPER))
     fy += 2.12
-slide('Future', title_bar('What comes next', 'future improvements') + ''.join(fcontent),
+slide('Future', title_bar('Remaining work until the final evaluation', 'what is left') + ''.join(fcontent),
       notes='Order matters: items 1 and 2 are the ones that could change the headline '
             'result, and both are already implemented.')
 
@@ -803,30 +803,250 @@ slide('Summary', (
                     'baseline", the answer is on this slide and on the key-finding slide.')
 
 # ════════════════════════════════════════════════════════════════════
+# committee-mandated opening: goals, feedback, methodology, results
+# ════════════════════════════════════════════════════════════════════
+ob_h = pstyle(13, INK, True, space_after=0.05)
+ob_b = pstyle(11.5, GREY)
+done = pstyle(11.5, TEAL, True, align='center')
+part = pstyle(11.5, GOLD, True, align='center')
+
+def objective(x, y, w, tag, head, sub, status, scolor):
+    return (box(x, y, w, 2.9, [(head, ob_h), (sub, ob_b)], fill=PAPER, valign='top') +
+            box(x, y + 3.0, w, 0.8, [(status, scolor)], fill='FFFFFF'))
+
+slide('Goals', (
+    title_bar('What the project is for', 'goals and objectives') +
+    box(1.6, 3.8, 30.7, 1.5,
+        [('A surgeon operating through a single laparoscope sees a flat image of the '
+          'present moment. Our goal is a system that reconstructs the scene in 3D and '
+          'then anticipates how the tissue will deform next — from that one camera, '
+          'with no depth sensor and no clinical annotation.', pstyle(13.5, INK))],
+        fill=MINT) +
+    objective(1.6, 5.9, 7.3, 'O1', 'O1  ·  Reconstruct',
+              '4D scene geometry from monocular laparoscopic video, without stereo '
+              'input or labels.', 'COMPLETE  ·  FYP-1', done) +
+    objective(9.6, 5.9, 7.3, 'O2', 'O2  ·  Learn deformation',
+              'A self-supervised model of how tissue moves, trained on the '
+              'reconstructed geometry.', 'COMPLETE  ·  MODULE 5', done) +
+    objective(17.6, 5.9, 7.3, 'O3', 'O3  ·  Predict ahead',
+              'Future tissue geometry at 1–3 frames, with a calibrated estimate of '
+              'confidence.', 'IMPLEMENTED  ·  MODULE 6', part) +
+    objective(25.6, 5.9, 6.7, 'O4', 'O4  ·  Evaluate and position',
+              'Against classical and learned baselines, and against the published '
+              'literature.', 'IN PROGRESS  ·  M7–M8', part) +
+    box(1.6, 11.0, 30.7, 1.0, [('Research question',
+                                pstyle(13, TEAL2, True))]) +
+    box(1.6, 11.9, 30.7, 2.0,
+        [('Can future 3D tissue geometry be predicted from monocular surgical video '
+          'alone — and can the system say how much to trust each prediction?',
+          pstyle(17, INK, True, italic=True))], fill=PAPER) +
+    box(1.6, 14.4, 30.7, 2.2,
+        [('This is a research FYP. The deliverable is a methodology, a set of measured '
+          'results, and a comparison against the literature — not a product.',
+          pstyle(13, GREY, italic=True))])
+), notes='One minute. State the goal, the four objectives and their status, and the '
+         'research question. Do not drift into method here.')
+
+# ── faculty feedback from the FYP-1 final evaluation ────────────────
+fb_p = pstyle(12.5, BRICK, True, space_after=0.04)
+fb_s = pstyle(12.5, TEAL, True, space_after=0.04)
+fb_b = pstyle(11, INK)
+fb_e = pstyle(10.5, GREY, italic=True)
+
+def fb_row(y, fb, did, detail, evid):
+    return (box(1.6, y, 12.6, 2.75, [(fb, fb_p)], fill='F7F2F1', valign='middle') +
+            arrow(14.4, y + 1.38, 15.1, y + 1.38, GREY) +
+            box(15.3, y, 17.0, 2.75, [(did, fb_s), (detail, fb_b), (evid, fb_e)],
+                fill='F0F6F5', valign='top'))
+
+slide('Feedback', (
+    title_bar('Faculty feedback from FYP-1, and what we did about it',
+              'addressing feedback') +
+    fb_row(3.9, 'Implement a base paper for comparative analysis',
+           'Two base papers implemented',
+           'PointRNN (Fan & Yang) for point-cloud forecasting; Luo & Hu (CVPR 2021) '
+           'for point diffusion.', 'module7_baselines.py') +
+    fb_row(6.85, 'Select a few SOTA papers and implement them',
+           'Eleven methods on one protocol',
+           'Five classical and five learned predictors, plus ours, all scored on '
+           'identical windows.', 'module7_baselines.py  ·  781 lines') +
+    fb_row(9.8, 'Do a detailed analysis — hyperparameter tuning, optimisation',
+           'Four tuning studies',
+           'Inference cost against accuracy, context length, optimiser sensitivity, '
+           'and diffusion ablations.', 'module8_hpo.py  ·  593 lines') +
+    fb_row(12.75, 'Start writing a paper in IEEE or Springer format',
+           'IEEE conference manuscript drafted',
+           'Six pages, 22 references, tables generated directly from the result files.',
+           'paper/main.tex  ·  paper/main.pdf') +
+    box(1.6, 16.0, 30.7, 1.2,
+        [('All four are implemented and in the repository. Two still need their '
+          'compute runs, which is item 1 on the remaining-work slide.',
+          pstyle(12.5, GOLD, True, italic=True))])
+), notes='One minute. This is a required section. Say what was asked, what we built, '
+         'and name the file. Be honest that M7 and M8 are written but not yet run.')
+
+# ── methodology, stated so it can be judged ─────────────────────────
+mh = pstyle(12.5, TEAL, True, space_after=0.05)
+mb = pstyle(11.5, INK)
+
+slide('Methodology', (
+    title_bar('The methodology, finalised', 'progress  1 / 3') +
+    box(1.6, 3.8, 30.7, 1.2,
+        [('Given the last 4 frames of 512 tracked tissue points, predict their '
+          'displacement k frames ahead, for k ∈ {1, 2, 3}. No clinical labels at any '
+          'stage.', pstyle(14, INK, True))], fill=MINT) +
+    card(1.6, 5.4, 9.8, 4.5, 'Model', [
+        'Conditional denoising diffusion',
+        'v-prediction, cosine schedule, T = 500',
+        'Min-SNR-γ loss weighting',
+        'Temporal transformer + two-way',
+        'cross-attention · 16.3 M parameters'], TEAL2) +
+    card(12.05, 5.4, 9.8, 4.5, 'What it predicts', [
+        'The correction to constant-velocity',
+        'extrapolation, not the displacement',
+        'itself — so a degenerate model falls',
+        'back to an estimator 41% stronger',
+        'than the naive baseline.'], TEAL2) +
+    card(22.5, 5.4, 9.8, 4.5, 'How it is queried', [
+        'DDIM sampler, 20 steps',
+        'Direct (k ≤ 3), rollout (10 frames),',
+        'and 5 independent samples whose',
+        'spread is the uncertainty estimate.'], TEAL2) +
+    card(1.6, 10.4, 14.9, 4.0, 'Data and protocol', [
+        '10 reconstructed videos · 512 anchor points · window W = 4',
+        '5,910 training windows, 1,461 validation windows',
+        'Self-supervised throughout — the targets come from the',
+        'reconstruction, never from a human annotator.'], GOLD, fill='FBF4E6') +
+    card(17.4, 10.4, 14.9, 4.0, 'Reported where it can be checked', [
+        'The method is written up in full in the IEEE manuscript,',
+        'Section III, with every hyperparameter stated. Each number',
+        'in the paper is generated from a result file rather than',
+        'transcribed by hand.'], GOLD, fill='FBF4E6') +
+    box(1.6, 14.9, 30.7, 1.4,
+        [('Every reported metric is inverted back into physical units before it is '
+          'printed, so nothing on these slides is in normalised space.',
+          pstyle(12.5, GREY, italic=True))])
+), notes='Part of the two-minute progress section. The committee lists "not finalising '
+         'and reporting the methodology" as a failure mode -- this is the answer to it.')
+
+# ── metrics and results ─────────────────────────────────────────────
+slide('ResultsMetrics', (
+    title_bar('Metrics chosen, and what they measured', 'progress  2 / 3') +
+    box(1.6, 3.8, 15.0, 0.9, [('Why these metrics', pstyle(13.5, TEAL2, True))]) +
+    box(1.6, 4.8, 15.0, 5.3, [
+        (t, pstyle(11.5, INK, space_after=0.1)) for t in [
+            'Chamfer Distance  —  correspondence-free, so it does not assume point',
+            'identity holds across frames. Primary accuracy metric.',
+            'Mean Point Error  —  correspondence-aware, reported alongside it.',
+            'Directional cosine  —  separates "learned nothing" from "learned the',
+            'direction but the wrong distance". Chamfer Distance alone cannot.',
+            'Spread–error correlation  —  tests whether uncertainty is calibrated.',
+            'PSNR / SSIM  —  image space, against the reconstruction ceiling.']],
+        fill=PAPER, valign='top') +
+    box(17.6, 3.8, 14.7, 0.9, [('What we measured', pstyle(13.5, BRICK, True))]) +
+    card(17.6, 4.8, 14.7, 2.4, 'Accuracy  —  not yet ahead', [
+        'CD 0.01568 against a naive baseline of 0.01557.',
+        'Constant velocity beats both, on all 10 videos.'], BRICK, fill='F3E7E4') +
+    card(17.6, 7.5, 14.7, 2.6, 'Direction  —  clearly learned', [
+        'Cosine +0.57 at t+1, +0.40 at t+2, +0.26 at t+3.',
+        'A model that learned nothing would read 0.00.',
+        'So the failure is magnitude, not direction.'], TEAL2) +
+    card(17.6, 10.4, 14.7, 2.6, 'Uncertainty  —  calibrated', [
+        'Spread across 5 sampled futures correlates with',
+        'realised error at r = 0.69. No baseline in the',
+        'comparison provides this at all.'], TEAL2) +
+    box(1.6, 10.4, 15.0, 2.6, [
+        ('Six quality tests, run as a suite', pstyle(13, TEAL2, True)),
+        ('QT0 verifies the evaluation data is the data the model trained on, and runs '
+         'as a gate before anything is predicted. QT1–QT5 cover short-horizon '
+         'accuracy, rollout growth, diversity, smoothness and cross-scene '
+         'generalisation.', pstyle(11.5, INK))], fill=PAPER) +
+    box(1.6, 13.4, 30.7, 2.6, [
+        ('Two explanations were tested and eliminated before we drew any conclusion',
+         pstyle(13.5, INK, True)),
+        ('•  Error does not grow with distance from the training frames  '
+         '(ρ = +0.02, p = 0.61)', pstyle(12.5, INK)),
+        ('•  Dropped preprocessing frames do not explain it  '
+         '(333 origins checked, 0 drops found)', pstyle(12.5, INK))], fill=PAPER)
+), notes='Part of the two-minute progress section. Valid metrics and adequate results '
+         'are both on the committee failure list. Lead with why each metric was chosen.')
+
+# ── the live demonstration ──────────────────────────────────────────
+dn = pstyle(22, 'FFFFFF', True, align='center', font='Cambria')
+dh = pstyle(13, INK, True, space_after=0.05)
+db = pstyle(11.5, GREY)
+
+slide('DemoPlan', (
+    title_bar('What you are about to see, running live', 'demonstration') +
+    box(1.6, 3.8, 30.7, 1.2,
+        [('Nothing in this demonstration is pre-rendered. The checkpoint is loaded and '
+          'inference is run in front of you.', pstyle(14, INK, True))], fill=MINT) +
+    ''.join(
+        rect(1.6, 5.5 + i * 2.25, 1.9, 1.9, TEAL2) +
+        box(1.6, 5.5 + i * 2.25, 1.9, 1.9, [(str(i + 1), dn)]) +
+        box(3.9, 5.5 + i * 2.25, 28.4, 1.9, [(h, dh), (d, db)], fill=PAPER, valign='top')
+        for i, (h, d) in enumerate([
+            ('Load the trained checkpoint and verify the evaluation data',
+             'QT0 runs first: the rebuilt trajectory is checked against Module 4’s '
+             'saved windows before anything is predicted.'),
+            ('Predict a held-out moment at t+1, t+2 and t+3',
+             'DDIM sampling, 20 steps, against the naive and constant-velocity '
+             'baselines on the same window.'),
+            ('Render the prediction as actual video frames',
+             'The predicted motion of 512 points is carried onto all 58,000 Gaussians '
+             'and rasterised into an image.'),
+            ('Compare side by side with the real frame',
+             'Real · reconstruction ceiling · our prediction · naive baseline, '
+             'with magnified motion arrows and an error map.'),
+            ('Forecast past the end of the recording',
+             'Twelve frames beyond the last recorded image — the only output that '
+             'shows prediction rather than describing it.'),
+        ]))
+), notes='Show this while the notebook is starting. Say explicitly that it is live. '
+         'If a cell is slow, keep talking over it -- do not watch the progress bar.')
+
+# ── divider into the reference section ──────────────────────────────
+slide('DividerRef', (
+    box(0, 0, 1.1, H, [], fill=TEAL) +
+    box(2.4, 6.5, 29, 2.2, [('Reference slides',
+                             pstyle(34, 'FFFFFF', True, font='Cambria'))]) +
+    box(2.4, 9.0, 29, 2.4,
+        [('Everything beyond this point is held for questions: the architecture, each '
+          'module in detail, the problems we hit and fixed, the training curve and the '
+          'literature table.', pstyle(15, MINT))], valign='top')
+), dark=True, notes='Do not present past this slide. Jump to whichever reference slide '
+                    'a question needs.')
+
+# ════════════════════════════════════════════════════════════════════
 # deck order — one contiguous block per presenter
 # ════════════════════════════════════════════════════════════════════
 emit([
-    # ── Ahmad Rashad (22i-1175) · slides 1-6 · the problem and Module 5 ──
-    'Title',
-    'Problem',
-    'Pipeline',
-    'Module5',
-    'Problems5',
-    # ends Ahmad's block on the full picture, which hands straight over to Module 6
-    'Architecture',
-    # ── Shehroz (22i-0771) · slides 7-12 · Module 6 and every measured result ──
-    'Module6',
-    'Problems6',
-    'ResultsTrain',
-    'ResultsCompare',
-    'KeyFinding',
-    'Uncertainty',
-    # ── Humair Khan (22i-2623) · slides 13-17 · the output, the positioning, the close ──
-    'Visuals',
-    'Literature',
-    'Comparative',
-    'Future',
-    'Summary',
+    # ══ A · the mandated 4-5 minutes, uninterrupted ══════════════════
+    'Title',           # 1   10 s
+    'Goals',           # 2   1 min   -- overview of goals / objectives
+    'Feedback',        # 3   1 min   -- faculty feedback from FYP-1, addressed
+    'Methodology',     # 4   \
+    'ResultsMetrics',  # 5    > 2 min -- progress since FYP-1
+    'Comparative',     # 6   /
+    'Future',          # 7   1 min   -- remaining work to the final evaluation
+    # ══ B · demonstration and preliminary results ════════════════════
+    'DemoPlan',        # 8   shown while the notebook loads
+    'Visuals',         # 9
+    'KeyFinding',      # 10
+    'Uncertainty',     # 11
+    'ResultsCompare',  # 12
+    # ══ C · reference, for questions only ════════════════════════════
+    'DividerRef',      # 13
+    'Architecture',    # 14
+    'Module5',         # 15
+    'Problems5',       # 16
+    'Module6',         # 17
+    'Problems6',       # 18
+    'ResultsTrain',    # 19
+    'Literature',      # 20
+    'Pipeline',        # 21
+    'Problem',         # 22
+    'Summary',         # 23
 ])
 
 # ════════════════════════════════════════════════════════════════════
