@@ -54,11 +54,14 @@ Four-dimensional reconstruction of endoscopic scenes has advanced rapidly, and
 recent Gaussian-splatting methods recover deforming tissue at high fidelity in
 real time. Every such system, however, is \emph{retrospective}: it describes
 deformation that has already been observed and offers no estimate of deformation
-that has not. Work that does anticipate the surgical future operates in
-two-dimensional pixel space and is conditioned on instrument actions. We present,
-to our knowledge, the first pipeline that forecasts future tissue \emph{geometry}
-from monocular laparoscopic video without any clinical, action or instrument
-annotation. Our system reconstructs the scene as a deformable Gaussian field,
+that has not. Work that does anticipate the surgical future has operated in
+two-dimensional pixel space and been conditioned on instrument actions, and
+concurrent work has begun to forecast Gaussian motion states and score them by
+rendered appearance. We approach the same shift from the geometry side. We present a
+pipeline that forecasts future tissue \emph{geometry} from monocular laparoscopic
+video without any clinical, action or instrument annotation, evaluates it where the
+tissue is rather than how the render looks, and --- alone among the methods surveyed
+here --- attaches a calibrated uncertainty to every prediction. Our system reconstructs the scene as a deformable Gaussian field,
 extracts a time-consistent trajectory of \numAnchors{} tracked tissue points,
 converts that trajectory into a self-supervised dataset of \numTrainWindows{}
 windows, and trains a conditional denoising diffusion model conditioned jointly on
@@ -197,20 +200,53 @@ v-parameterisation~\cite{salimans2022progressive} and Min-SNR loss
 weighting~\cite{hang2023minsnr}, both of which prove necessary at our displacement
 scale.
 
+\subsection{Concurrent work: prediction inside Gaussian representations}
+Two preprints appeared while this work was being prepared. Both move in the direction
+argued for here, and both are better stated plainly than left for a reader to find.
+
+SurgGMF~\cite{surggmf2026} forecasts future Gaussian \emph{motion states} --- position,
+scale and rotation residuals --- five steps ahead from a ten-step history, and renders
+them to produce anticipatory views. Its stated aim, advancing surgical Gaussian
+representations from retrospective reconstruction toward predictive scene modelling, is
+the same shift this paper argues for, and we therefore make no claim to priority over it.
+Three differences remain, and they are methodological rather than cosmetic. Its
+supervision comes from the Gaussian states of a trained Deform3DGS teacher, which its
+authors note should not be read as physical tissue trajectories. It is scored on render
+quality (PSNR, SSIM, LPIPS), so a forecast is judged by how the image looks rather than by
+where the tissue has gone; a prediction that is geometrically wrong but photometrically
+plausible is not penalised. And it emits a single point forecast. We evaluate in geometry
+space under both a correspondence-free and a correspondence-aware metric, and we sample
+multiple futures whose spread we show to be calibrated against realised error.
+
+The second preprint~\cite{obsref2026} anchors each tissue point to its last valid
+observation and predicts only the deformation induced by the instrument. It is the
+stronger formulation for its setting, but it consumes the preplanned future tool
+trajectory as an input. The annotation-free constraint adopted here rules that information
+out, so the two target different deployment assumptions rather than competing directly:
+theirs suits a planned trajectory known in advance, ours the case where nothing about the
+surgeon's next move is given.
+
 \subsection{The gap}
-Table~\ref{tab:positioning} states the gap precisely rather than broadly. Surgical
-reconstruction is retrospective. Surgical anticipation predicts pixels and requires
-action labels. Point cloud forecasting targets rigid outdoor scenes without
-correspondence or uncertainty. Medical point cloud diffusion estimates present
-deformation rather than future deformation. \emph{Forecasting future 3D tissue
-geometry from monocular surgical video, without annotation, with a calibrated
-uncertainty estimate}, occupies none of these cells, and is what this work
-contributes.
+Table~\ref{tab:positioning} states the position precisely rather than broadly. Surgical
+reconstruction is retrospective. Surgical anticipation predicts pixels and requires action
+labels. Point cloud forecasting targets rigid outdoor scenes without correspondence or
+uncertainty. Medical point cloud diffusion estimates present deformation rather than
+future deformation. Concurrent Gaussian motion forecasting does predict forward, but is
+scored on rendered appearance and returns a point estimate; concurrent tool-driven
+forecasting predicts geometry, but is given the future tool path.
+
+What remains unoccupied is the combination this paper targets: \emph{future 3D tissue
+geometry, from monocular video, learned without annotation, scored geometrically, and
+accompanied by a calibrated per-prediction uncertainty}. We claim that combination. We do
+not claim the idea of surgical forecasting, which is now being pursued from several
+directions at once, and the more useful question is no longer who arrived first but which
+supervision and which evaluation the problem actually requires.
 
 \begin{table*}[t]
 \centering
-\caption{Positioning against the four adjacent lines of work. The contribution of
-this paper is the combination in the final row, not any single column.}
+\caption{Positioning against the adjacent lines of work, including two concurrent
+preprints. The contribution of this paper is the combination in the final row --- and in
+particular the last two columns together --- not any single column.}
 \label{tab:positioning}
 \begin{tabular}{llllll}
 \toprule
@@ -224,6 +260,10 @@ Point cloud forecasting & \cite{fan2019pointrnn,lu2021monet,luo2023pcpnet}
   & Yes & 3D (rigid, outdoor) & self-supervised & No \\
 Medical point cloud diffusion & \cite{xie2025liverdiffusion}
   & No (present state) & 3D points & patient-specific & No \\
+Gaussian motion forecasting & \cite{surggmf2026}
+  & Yes & rendered views & teacher Gaussians & No \\
+Tool-driven deformation forecasting & \cite{obsref2026}
+  & Yes & 3D tissue geometry & planned tool path & No \\
 \midrule
 \textbf{This work} & -- & \textbf{Yes} & \textbf{3D tissue geometry}
   & \textbf{none} & \textbf{calibrated} \\
