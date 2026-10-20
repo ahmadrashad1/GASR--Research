@@ -169,6 +169,47 @@ you are targeting. Do not start implementing until that number exists.
 within the spike, the live goal is out of scope for this project and should be stated as
 future work rather than pursued.*
 
+#### Phase 4 spike — first findings (21 Oct 2026)
+
+Two results change the shape of this phase. Neither is yet verified against a paper PDF;
+both come from published abstracts and should be confirmed before any work is committed.
+
+**1. Our reconstruction is far off the published operating point.**
+EndoGaussian — the method this pipeline is built on — reports training *within two minutes
+per scene* and rendering at 195 FPS. We run 20,000 iterations for about fifteen minutes.
+EndoPlanar (MICCAI 2025) reports 307.5 FPS at 34.51 dB.
+
+That is roughly a sevenfold gap on reconstruction time, and closing it is configuration
+work rather than research. **This becomes Phase 4a and should happen before any
+feed-forward work is considered**, because it is cheap, it is measurable in days, and it
+changes what "live" would even require of the rest of the system.
+
+**2. The monocular constraint is what makes feed-forward hard, and it may be
+self-imposed.**
+The feed-forward endoscopic reconstruction that exists is largely stereo. Endo-E2E-GS
+builds Gaussian fields from *a single stereo pair* with no scene-specific optimisation,
+reporting 38.874 dB on ENDONERF and SCARED — exactly the capability Phase 4 needs, but
+from stereo input. (Its page returned 403 and a follow-up search did not surface the
+preprint, so treat these numbers as unconfirmed.)
+
+This forces a decision the project has not yet made explicitly:
+
+| | Monocular | Stereo |
+|---|---|---|
+| Deployment target | conventional laparoscopy | robotic surgery (da Vinci is stereo) |
+| Feed-forward reconstruction | little published work | available now |
+| Our current novelty claim | rests on this | weakened |
+| Route to live | research programme | engineering |
+
+Robotic platforms already provide stereo. If the intended destination is robotic surgery,
+the monocular constraint is self-imposed, and relaxing it converts Phase 4 from a research
+programme into an integration task. If the destination is conventional laparoscopy, the
+constraint is real and must be paid for.
+
+**This is a question for the supervisor, not a technical choice to be made quietly.** It
+determines whether "live" is reachable inside this project or belongs to the programme
+that follows it.
+
 ### Phase 5 — Causal re-architecture
 **Effort: 1 quarter, and only meaningful after Phase 4.**
 
@@ -204,6 +245,10 @@ achievable within the project, and publishable whether or not the first ever lan
 
 ## 5. What to do this week
 
-1. Run Modules 7 and 8.
-2. Run the calibration evaluation — no retraining, so it is hours not days.
-3. Book the Phase 4 literature spike. It is the long pole and it has not started.
+1. **Run Modules 7 and 8.** Pre-flighted — `python3 tools/preflight.py` reports no
+   unbound names across all four modules, so a run will not die on a typo.
+2. **Run the calibration evaluation** — no retraining, so hours not days.
+3. **Close the reconstruction gap (Phase 4a).** EndoGaussian reports two minutes per
+   scene; we take fifteen. Sevenfold, for configuration work.
+4. **Put the monocular-versus-stereo question to Dr Jamil.** It decides whether live
+   operation is reachable inside this project, and it is his call rather than ours.
