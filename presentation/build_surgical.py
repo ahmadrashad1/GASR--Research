@@ -96,11 +96,11 @@ slide('title', f"""
 <div class="incision r" style="--d:.34s"></div>
 <p class="lead wide r" style="--d:.26s">Predicting <b>future tissue geometry</b> from monocular
 laparoscopic video — with an honest estimate of its own confidence.</p>
-<div class="byline r" style="--d:.4s"><span>Ahmad Rashad &nbsp;·&nbsp; Shehroz &nbsp;·&nbsp;
+<div class="byline r" style="--d:.4s"><span>Ahmad Rashad &nbsp;·&nbsp; Shehroz Kashif &nbsp;·&nbsp;
 Humair Khan</span><br>Supervisor — Dr Akhtar Jamil · Computer Science, FAST NUCES Islamabad</div>
 <div class="hero"><img src="{data_uri('titlebg.jpg')}" alt=""><div class="hero-fade"></div>
 <div class="hero-tint"></div></div>""",
-      'Good morning. Ahmad Rashad, with Shehroz and Humair. Supervisor Dr Akhtar Jamil. '
+      'Good morning. Ahmad Rashad, with Shehroz Kashif and Humair Khan. Supervisor Dr Akhtar Jamil. '
       'A research FYP on 4D surgical reconstruction and deformation prediction.')
 
 # ════════════════════════════════════════════════════════════════════

@@ -192,7 +192,7 @@ slide('Title', (
         ('Predicting future tissue geometry from monocular laparoscopic video', t2)]) +
     box(2.4, 9.3, 28, 1.0, [('FYP-2 Mid Evaluation  ·  Modules 5 and 6', t4)]) +
     box(2.4, 12.6, 28, 2.6, [
-        ('Ahmad Rashad  ·  Shehroz  ·  Humair', t3),
+        ('Ahmad Rashad  ·  Shehroz Kashif  ·  Humair Khan', t3),
         ('Supervisor: Dr Akhtar Jamil', t3),
         ('Department of Computer Science, FAST NUCES Islamabad', t3)])
 ), dark=True, notes='Mid-evaluation for FYP-2. FYP-1 delivered reconstruction; this '
