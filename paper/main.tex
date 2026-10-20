@@ -308,6 +308,17 @@ $k\in\{\predSteps{}\}$, giving \numTrainWindows{} training and \numValWindows{}
 held-out windows under a temporal split applied within each recording. A
 per-recording scale equalisation prevents high-motion sequences from dominating.
 
+\IfFileExists{figures/architecture.png}{%
+\begin{figure*}[t]\centering
+\includegraphics[width=\textwidth]{figures/architecture.png}
+\caption{One forward pass of the conditional denoiser (left) and the inference and
+evaluation path that consumes its checkpoint (right). The horizon embedding is injected
+into \emph{both} branches: without it a single context window carries three mutually
+inconsistent targets, and the objective is not well posed. Module~6 trains nothing; it
+loads the checkpoint and is gated by a replay check (QT0) before any prediction is made.}
+\label{fig:architecture}
+\end{figure*}}{}
+
 \subsection{Stage 5: Conditional diffusion predictor}
 \label{sec:predict}
 \paragraph{Target} We predict displacement, not position. Predicting absolute
@@ -440,7 +451,20 @@ Training itself is not at fault. The objective converges smoothly from
 \bestEpoch{}, after which held-out error rises while training error continues to
 fall --- overfitting consistent with a corpus of \numVideos{} short recordings.
 
+\IfFileExists{figures/denoising.png}{%
+\begin{figure*}[t]\centering
+\includegraphics[width=\textwidth]{figures/denoising.png}
+\caption{The denoising trajectory for one held-out frame. Top row: the noisy sample at
+six of the twenty DDIM steps, with arrows coloured green where they move in the true
+direction and red where they oppose it. Bottom row: the model's running estimate of the
+clean displacement. Directional agreement rises from $+0.02$ at the first step to $+0.64$
+at the last while the predicted magnitude stays far below the truth, which is the
+direction-versus-magnitude split of Section~\ref{sec:dirmag} made visible.}
+\label{fig:denoising}
+\end{figure*}}{}
+
 \subsection{Direction versus magnitude}
+\label{sec:dirmag}
 \label{sec:direction}
 Accuracy alone cannot distinguish a predictor that has learned nothing from one
 that has learned where tissue is going but not how far. Decomposing the predicted
@@ -481,6 +505,16 @@ $5.5\times10^{-4}$ at ten. This property is independent of whether
 the predictor is the most accurate method in Table~\ref{tab:comparison}: a system
 that reliably signals when it should not be relied upon is a precondition for
 intraoperative deployment, and no other method in the comparison provides one.
+
+\IfFileExists{figures/timeline.png}{%
+\begin{figure*}[t]\centering
+\includegraphics[width=\textwidth]{figures/timeline.png}
+\caption{Failure localisation. Error is not concentrated at frames where preprocessing
+dropped data (left), is not confined to short bursts (centre), and does not drift with
+distance from the training split (right, $\rho=\driftRho{}$, $p=\driftP{}$). Two
+explanations for the accuracy deficit are eliminated by measurement rather than argument.}
+\label{fig:timeline}
+\end{figure*}}{}
 
 \subsection{Temporal behaviour and failure localisation}
 Rolling the single-step predictor forward accumulates error with a fitted exponent
