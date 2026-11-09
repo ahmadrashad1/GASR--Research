@@ -226,6 +226,17 @@ FRESH_START      = False           # True forces epoch 0 even from a compatible 
                                     # restarted automatically.
 SEED            = 42
 
+# DRIVE_BASE and the Drive mount come from the setup cell at the top of the
+# notebook. Recreate them here if this cell is the first thing run in a fresh
+# runtime: a NameError sixty lines in costs a session for nothing.
+if 'DRIVE_BASE' not in globals():
+    DRIVE_BASE = '/content/drive/MyDrive/EndoGaussian'
+    if not os.path.isdir(DRIVE_BASE):
+        from google.colab import drive
+        drive.mount('/content/drive')
+    assert os.path.isdir(DRIVE_BASE), f'Drive mounted, but {DRIVE_BASE} is absent'
+    print(f'DRIVE_BASE recovered locally -> {DRIVE_BASE}')
+
 COMBINED_DIR = f'{DRIVE_BASE}/module4_combined'
 MODULE5_DIR  = f'{DRIVE_BASE}/module5'
 os.makedirs(MODULE5_DIR, exist_ok=True)

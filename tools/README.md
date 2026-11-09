@@ -23,6 +23,14 @@ one place and not another, helpers deleted while still referenced.
 anything that depends on values rather than names. A clean report is weak
 evidence; a hit is worth reading.
 
+**And one blind spot worth naming,** because it has already cost a run: by
+harvesting names from the notebook, the checker assumes the cells are executed
+in order. A fresh runtime where Module 7's cell is the first thing run still
+fails on `DRIVE_BASE`, and preflight reports PASS, because the name *is* bound
+somewhere in the notebook — just not yet in that session. Modules 5 to 8 now
+each re-derive `DRIVE_BASE` if it is absent, which closes this particular hole
+at the source; the general case cannot be caught statically.
+
 It is deliberately conservative and prefers silence to a false alarm, since a
 checker that cries wolf stops being run. Verified against an injected typo:
 renaming `ctx` to `cxt` in one call site is reported at the right line.
