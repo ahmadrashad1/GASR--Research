@@ -9,7 +9,15 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # CONFIG
 # ════════════════════════════════════════════════════════════════════
 N_ANCHOR        = 512
-WINDOW_SIZE     = 32
+WINDOW_SIZE     = 8      # frames of context this run TRAINS on -- a view onto the
+                          # 32-frame window Module 4 now builds, taking the most recent
+                          # frames. Decoupling the two is what makes the submission fit:
+                          # Module 8 Study B can sweep 4..32 on the cheap backbone for the
+                          # paper's context-length ablation, while the diffusion model
+                          # trains at a width whose activation footprint still allows
+                          # MICRO_BATCH=8 and therefore a COMPLETE run inside one Colab
+                          # session. W=32 would be ~8x the epoch time for a hypothesis
+                          # the backbone can test for free.
 LATENT_DIM      = 512
 HIDDEN_DIM      = 1024
 N_HEADS         = 8
@@ -83,7 +91,12 @@ TARGET_MODE     = 'cv_residual'
 assert TARGET_MODE in ('delta', 'cv_residual')
 
 BATCH_SIZE      = 32             # effective batch size (training dynamics) -- unchanged
-MICRO_BATCH     = 2               # was 16, which was tuned for a 4-FRAME window. The
+MICRO_BATCH     = 8               # holds BATCH*N_ANCHOR*W -- the quantity that actually
+                                   # binds -- at 8*512*8 = 32,768 token positions, the same
+                                   # footprint the old MICRO_BATCH=16 had at W=4. Raise or
+                                   # lower it with W so that product stays put.
+                                   # (original note, still the reason the knob exists:)
+                                   # was 16, which was tuned for a 4-FRAME window. The
                                    # temporal transformer sees BATCH*N_ANCHOR*W token
                                    # positions, so W=4->32 is 8x the activation memory in
                                    # the one place that was already the binding constraint
@@ -135,7 +148,14 @@ WARMUP_EPOCHS   = 35
 # 400 of those epochs were spent overfitting. 200 leaves generous margin past where the
 # previous run peaked while letting the cosine schedule anneal fully, and CKPT_BEST still
 # keeps whichever epoch actually validates best.
-TOTAL_EPOCHS    = 200
+TOTAL_EPOCHS    = 150
+# 150, not 200: at W=8/MICRO_BATCH=8 an epoch costs ~200s, so 150 epochs is ~8.3h of
+# training plus ~10% validation overhead -- inside SESSION_BUDGET_HOURS with margin.
+# That matters more than the extra 50 epochs: a run that ANNEALS FULLY in one session
+# is a finished result, where one that needs four sessions is four chances to lose the
+# runtime. The previous run peaked at epoch ~40-60 of 500, so 150 is generous headroom
+# past where this architecture has ever improved, and CKPT_BEST keeps the best epoch
+# regardless.
 EMA_DECAY       = 0.9999
 GRAD_CLIP       = 1.0
 # VAL_EVERY / VAL_SUBSET_SIZE: an older run validated only every 50 epochs on the full
@@ -292,6 +312,18 @@ assert train_ps.max() <= MAX_PRED_STEP and val_ps.max() <= MAX_PRED_STEP, (
     f'Module 4 emitted pred_steps up to {max(train_ps.max(), val_ps.max())} but the horizon '
     f'embedding only has room for {MAX_PRED_STEP} -- raise MAX_PRED_STEP (this changes the '
     f'architecture and so restarts training).')
+
+# Module 4 builds a 32-frame window; this run uses its most recent WINDOW_SIZE frames.
+# Done here, before DATA_SCALE and CTX_SCALE are measured, so both are computed over
+# exactly the tensor the network will see rather than over frames it never reads.
+_W_DATA = train_inp.shape[1]
+assert _W_DATA >= WINDOW_SIZE, (
+    f'Module 4 emitted W={_W_DATA} but this run asks for W={WINDOW_SIZE}. Re-run Module 4 '
+    f'with a WINDOW_SIZE of at least {WINDOW_SIZE}.')
+if _W_DATA > WINDOW_SIZE:
+    train_inp = train_inp[:, -WINDOW_SIZE:]
+    val_inp   = val_inp[:, -WINDOW_SIZE:]
+    print(f'  Context       : last {WINDOW_SIZE} of the {_W_DATA} frames Module 4 built')
 
 # Constant-velocity displacement for every window, in the SAME displacement-equalised space
 # as Module 4's deltas: (last - previous) * k, scaled by that window's disp_norm factor.
@@ -460,6 +492,13 @@ class ConditionalDenoiser(nn.Module):
         )
 
     def encode_context(self, ctx):
+        # Modules 6, 7 and 8 load Module 4's full-width window, which may be wider
+        # than this model was trained on. Take the most recent frames here, so the
+        # checkpoint is always fed the context it actually saw in training and no
+        # caller has to remember to slice.
+        _w = self.temporal_pe.shape[0]
+        if ctx.shape[1] > _w:
+            ctx = ctx[:, -_w:]
         B, Wn, N_A, _ = ctx.shape
         # Feed MOTION, not position. Module 4 normalises coordinates to [-1, 1], while a
         # single frame of tissue motion is ~0.004 of that range -- the signal is well

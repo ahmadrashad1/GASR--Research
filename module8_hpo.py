@@ -275,6 +275,13 @@ class ConditionalDenoiser(nn.Module):
             nn.Linear(hidden_dim // 2, 3))
 
     def forward(self, ctx, x_noisy, t, hstep):
+        # Modules 6, 7 and 8 load Module 4's full-width window, which may be wider
+        # than this model was trained on. Take the most recent frames here, so the
+        # checkpoint is always fed the context it actually saw in training and no
+        # caller has to remember to slice.
+        _w = self.temporal_pe.shape[0]
+        if ctx.shape[1] > _w:
+            ctx = ctx[:, -_w:]
         B, Wn, N, _ = ctx.shape
         # Motion relative to the last frame, plus that frame's absolute position.
         # Must match Module 5's encode_context exactly or the checkpoint is being

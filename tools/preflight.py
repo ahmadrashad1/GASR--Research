@@ -99,6 +99,19 @@ class Checker(ast.NodeVisitor):
                 local.bind(sub.id)
             elif isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 local.bind(sub.name)
+                # A nested def's PARAMETERS are bound inside it, and ast.walk brings its
+                # body into this scope without them -- so every parameter of an inner
+                # helper read like an unbound name. Bind them here. Over-binding costs a
+                # missed warning; under-binding cost a false alarm on a correct file,
+                # which is the failure that gets a checker ignored.
+                if not isinstance(sub, ast.ClassDef):
+                    _a = sub.args
+                    for _x in (_a.posonlyargs + _a.args + _a.kwonlyargs):
+                        local.bind(_x.arg)
+                    if _a.vararg:
+                        local.bind(_a.vararg.arg)
+                    if _a.kwarg:
+                        local.bind(_a.kwarg.arg)
             elif isinstance(sub, (ast.Import, ast.ImportFrom)):
                 for a in sub.names:
                     local.bind((a.asname or a.name).split('.')[0])
