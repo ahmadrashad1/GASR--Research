@@ -541,7 +541,9 @@ class ConditionalDenoiser(nn.Module):
                  dropout, max_pred_step):
         super().__init__()
         D = latent_dim
-        self.context_geo = GeomMLP(3, hidden_dim, D, dropout)
+        self.context_geo = GeomMLP(6, hidden_dim, D, dropout)
+        # Overwritten by load_state_dict -- see Module 5's encode_context.
+        self.register_buffer('ctx_scale', torch.tensor(1.0))
         self.target_geo = GeomMLP(3, hidden_dim, D, dropout)
         self.temporal_pe = nn.Parameter(torch.randn(window_size, D) * 0.02)
         layer = nn.TransformerEncoderLayer(D, n_heads, hidden_dim, dropout=dropout,
@@ -562,7 +564,13 @@ class ConditionalDenoiser(nn.Module):
 
     def encode_context(self, ctx):
         B, Wn, N, _ = ctx.shape
-        h = self.context_geo(ctx) + self.temporal_pe[None, :, None, :]
+        # Motion relative to the last frame, plus that frame's absolute position.
+        # Must match Module 5's encode_context exactly or the checkpoint is being
+        # fed a different input representation than it was trained on.
+        last = ctx[:, -1:]
+        feat = torch.cat([(ctx - last) * self.ctx_scale,
+                          last.expand(-1, Wn, -1, -1)], dim=-1)
+        h = self.context_geo(feat) + self.temporal_pe[None, :, None, :]
         h = h.permute(0, 2, 1, 3).reshape(B * N, Wn, -1)
         return self.temporal_transformer(h)[:, -1, :].reshape(B, N, -1)
 

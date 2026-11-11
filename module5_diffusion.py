@@ -9,7 +9,7 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # CONFIG
 # ════════════════════════════════════════════════════════════════════
 N_ANCHOR        = 512
-WINDOW_SIZE     = 4
+WINDOW_SIZE     = 32
 LATENT_DIM      = 512
 HIDDEN_DIM      = 1024
 N_HEADS         = 8
@@ -83,7 +83,18 @@ TARGET_MODE     = 'cv_residual'
 assert TARGET_MODE in ('delta', 'cv_residual')
 
 BATCH_SIZE      = 32             # effective batch size (training dynamics) -- unchanged
-MICRO_BATCH     = 16              # actual per-forward-pass batch -- fits a T4's ~14.5GB
+MICRO_BATCH     = 2               # was 16, which was tuned for a 4-FRAME window. The
+                                   # temporal transformer sees BATCH*N_ANCHOR*W token
+                                   # positions, so W=4->32 is 8x the activation memory in
+                                   # the one place that was already the binding constraint
+                                   # (batch=32 at W=4 overran a T4 by ~128MiB). 2 keeps the
+                                   # footprint at roughly the old W=4 level. The cost is
+                                   # ACCUM_STEPS=16, so ~8x the iterations per epoch on an
+                                   # architecture whose epoch time tracks iteration count:
+                                   # budget ~800s/epoch, not ~100s. Raise it the moment a
+                                   # run proves there is headroom.
+                                   # (original note, still the reason the knob exists:)
+                                   # per-forward-pass batch -- fits a T4's ~14.5GB
                                    # (encode_context folds N_ANCHOR into the batch dim for its
                                    # temporal transformer, so activation memory scales with
                                    # BATCH_SIZE * N_ANCHOR = 32*512 = 16,384 rows through a
@@ -306,6 +317,14 @@ else:
 # diffusion noise" failure this scaling exists to prevent.
 DATA_SCALE = float(1.0 / (train_target_x0.std() + 1e-8))
 
+# CTX_SCALE -- the same treatment, for the INPUT. encode_context feeds the network motion
+# relative to the most recent frame rather than raw coordinates; that quantity has std
+# ~0.004 inside Module 4's [-1, 1] normalised space, so left unscaled the first Linear
+# receives a signal two orders of magnitude below what its initialisation assumes.
+# Measured over the non-degenerate part of the window: the last frame is identically
+# zero by construction and would drag the std down by 1/W if it were included.
+CTX_SCALE = float(1.0 / ((train_inp[:, :-1] - train_inp[:, -1:]).std() + 1e-8))
+
 train_x0 = train_target_x0 * DATA_SCALE   # near-unit-variance training target
 val_x0   = val_target_x0   * DATA_SCALE
 
@@ -324,6 +343,8 @@ print(f'  Target        : {TARGET_MODE}' + ('   (model predicts the CORRECTION t
       '   (model predicts the raw displacement; zero output = naive no-motion)'))
 print(f'  DATA_SCALE    : {DATA_SCALE:.3f}  (target std {train_target_x0.std():.6f} -> ~1.0; '
       f'raw delta std {train_delta.std():.6f})')
+print(f'  CTX_SCALE     : {CTX_SCALE:.3f}  (context motion fed at ~unit variance, with the '
+      f'absolute last frame alongside it)')
 PRED_STEPS_PRESENT = sorted(set(np.unique(train_ps).tolist()) | set(np.unique(val_ps).tolist()))
 print(f'  Horizons      : {PRED_STEPS_PRESENT}  (train '
       + ', '.join(f'k={k}:{int((train_ps == k).sum()):,}' for k in PRED_STEPS_PRESENT)
@@ -400,8 +421,12 @@ class ConditionalDenoiser(nn.Module):
     def __init__(self):
         super().__init__()
         D = LATENT_DIM
-        self.context_geo = GeomMLP()
+        self.context_geo = GeomMLP(in_dim=6)   # motion (3) + absolute anchor (3)
         self.target_geo  = GeomMLP()
+        # A buffer, not a constructor argument: it travels inside the state_dict, so
+        # Modules 6-8 rebuild the identical input transform from the checkpoint alone
+        # and there is no second place for the number to drift out of sync.
+        self.register_buffer('ctx_scale', torch.tensor(float(CTX_SCALE)))
         self.temporal_pe = nn.Parameter(torch.randn(WINDOW_SIZE, D) * 0.02)
 
         tf_layer = nn.TransformerEncoderLayer(
@@ -436,7 +461,29 @@ class ConditionalDenoiser(nn.Module):
 
     def encode_context(self, ctx):
         B, Wn, N_A, _ = ctx.shape
-        h = self.context_geo(ctx)                              # (B, W, N_A, D)
+        # Feed MOTION, not position. Module 4 normalises coordinates to [-1, 1], while a
+        # single frame of tissue motion is ~0.004 of that range -- the signal is well
+        # under 1% of the magnitude of the input carrying it. A pointwise encoder on raw
+        # coordinates therefore spends its capacity describing where a point IS, and the
+        # temporal transformer is left to recover movement by differencing tokens that
+        # agree to three significant figures. That is the most likely origin of the
+        # magnitude collapse Module 7 measured: the model reproduced the zero-motion
+        # baseline to within 2% at every horizon, which is what a network outputs when it
+        # cannot resolve the signal and falls back on the conditional mean.
+        #
+        # Every learned baseline in Module 7 already receives exactly this relative form
+        # (see its prep_features: `rel = ctx - ctx[:, -1:]`). The diffusion model was the
+        # only method in the comparison NOT given it, which is a fair part of why a
+        # 136k-parameter MLP beat 16.3M parameters of conditional diffusion.
+        #
+        # The absolute last frame is concatenated back in so that spatially varying
+        # deformation -- tissue near the instrument behaving differently from tissue at
+        # the periphery -- stays representable. Relative-only would discard that.
+        last = ctx[:, -1:]                                     # (B, 1, N_A, 3)
+        feat = torch.cat([(ctx - last) * self.ctx_scale,       # motion, ~unit variance
+                          last.expand(-1, Wn, -1, -1)],        # where that motion happens
+                         dim=-1)                               # (B, W, N_A, 6)
+        h = self.context_geo(feat)                             # (B, W, N_A, D)
         h = h + self.temporal_pe[None, :, None, :]
         h = h.permute(0, 2, 1, 3).reshape(B * N_A, Wn, -1)      # (B*N_A, W, D)
         h = self.temporal_transformer(h)                        # (B*N_A, W, D)
@@ -697,8 +744,12 @@ _arch_cfg = {
     # displacement: loading one as the other silently reconstructs every prediction wrong.
     # Listing it here makes switching modes retire the old checkpoint automatically.
     'TARGET_MODE': TARGET_MODE,
+    # The context encoder now takes 6 channels (motion + absolute anchor) instead of 3
+    # raw coordinates. A pre-change checkpoint has a 3-channel first layer and different
+    # weight semantics throughout, so it must be retired rather than loaded.
+    'CTX_MODE': 'rel6',
 }
-_cfg = dict(_arch_cfg, DATA_SCALE=DATA_SCALE, LR=LR, TOTAL_EPOCHS=TOTAL_EPOCHS,
+_cfg = dict(_arch_cfg, DATA_SCALE=DATA_SCALE, CTX_SCALE=CTX_SCALE, LR=LR, TOTAL_EPOCHS=TOTAL_EPOCHS,
             BATCH_SIZE=BATCH_SIZE, MICRO_BATCH=MICRO_BATCH, MIN_SNR_GAMMA=MIN_SNR_GAMMA,
             LR_SCHEDULE=LR_SCHEDULE, WEIGHT_DECAY=WEIGHT_DECAY, EARLY_STOP=EARLY_STOP)
 

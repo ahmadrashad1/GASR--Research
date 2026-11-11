@@ -74,7 +74,10 @@ BACKBONE_EPOCHS = 40
 BACKBONE_HIDDEN = 256
 BACKBONE_BATCH  = 32
 BACKBONE_LR     = 1e-3
-B_WINDOWS = [2, 3, 4]    # truncations of the existing 4-frame context
+B_WINDOWS = [4, 8, 16, 32]   # truncations of the 32-frame context. This is the cheap
+                              # test of whether the longer window was worth rebuilding
+                              # Module 4 for: minutes per config on the small backbone,
+                              # against ~40h for the equivalent diffusion retrain.
 
 # ── Study D: diffusion ablations ─────────────────────────────────────
 D_EPOCHS        = 25
@@ -233,7 +236,9 @@ class ConditionalDenoiser(nn.Module):
         super().__init__()
         D = latent_dim
         self.use_horizon = use_horizon
-        self.context_geo = GeomMLP(3, hidden_dim, D, dropout)
+        self.context_geo = GeomMLP(6, hidden_dim, D, dropout)
+        # Overwritten by load_state_dict -- see Module 5's encode_context.
+        self.register_buffer('ctx_scale', torch.tensor(1.0))
         self.target_geo = GeomMLP(3, hidden_dim, D, dropout)
         self.temporal_pe = nn.Parameter(torch.randn(window_size, D) * 0.02)
         lay = nn.TransformerEncoderLayer(D, n_heads, hidden_dim, dropout=dropout,
@@ -253,7 +258,13 @@ class ConditionalDenoiser(nn.Module):
 
     def forward(self, ctx, x_noisy, t, hstep):
         B, Wn, N, _ = ctx.shape
-        h = self.context_geo(ctx) + self.temporal_pe[None, :, None, :]
+        # Motion relative to the last frame, plus that frame's absolute position.
+        # Must match Module 5's encode_context exactly or the checkpoint is being
+        # fed a different input representation than it was trained on.
+        last = ctx[:, -1:]
+        feat = torch.cat([(ctx - last) * self.ctx_scale,
+                          last.expand(-1, Wn, -1, -1)], dim=-1)
+        h = self.context_geo(feat) + self.temporal_pe[None, :, None, :]
         h = h.permute(0, 2, 1, 3).reshape(B * N, Wn, -1)
         c = self.temporal_transformer(h)[:, -1, :].reshape(B, N, -1)
         g = self.target_geo(x_noisy)
@@ -476,6 +487,9 @@ def train_diffusion(cfg, epochs, frac):
     model = ConditionalDenoiser(W_FULL, cfg.get('latent', 512), cfg.get('hidden', 1024),
                                 8, cfg.get('layers', 3), 0.1, 8,
                                 cfg.get('use_horizon', True)).to(DEVICE)
+    # Trained from scratch here, so nothing restores the buffer: set it from the data,
+    # the same way Module 5 does, or the ablations train on an unscaled input.
+    model.ctx_scale.fill_(float(1.0 / ((T['inp'][:, :-1] - T['inp'][:, -1:]).std().item() + 1e-8)))
     diff = Diffusion(500, cfg['param'], cfg['min_snr'])
     opt = torch.optim.AdamW(model.parameters(), lr=D_LR, weight_decay=0.05)
     sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs, eta_min=1e-6)

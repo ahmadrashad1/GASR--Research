@@ -10,7 +10,12 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # CONFIG
 # ════════════════════════════════════════════════════════════════════
 N_ANCHOR     = 512
-WINDOW_SIZE  = 4
+WINDOW_SIZE  = 32       # was 4. Raised to test whether a longer context supplies the
+                         # magnitude information the model was missing -- at ~30fps this
+                         # is ~1s of history, enough to span a cardiac cycle, where W=4
+                         # could not span any periodic structure at all. Costs ~11% of
+                         # the windows (a window needs W+k frames) and 8x the context
+                         # tensor on disk. Module 8 Study B measures whether it paid.
 PRED_STEPS   = [1, 2, 3]
 VAL_FRAC     = 0.20
 SEED         = 42                       # reproducible FPS anchor selection
