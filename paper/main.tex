@@ -138,6 +138,11 @@ estimate discards information a guidance system needs.
       closest published method --- under a single protocol, reported with both a
       correspondence-free and a correspondence-aware metric
       (Sections~\ref{sec:setup}--\ref{sec:results}).
+\item \textbf{A root-cause diagnosis of a scale-induced failure mode}: when the
+      prediction target is a small difference between large coordinates, an encoder
+      given raw coordinates degenerates to the conditional mean. We quantify the
+      ratio at which this occurs, show it accounts for the measured behaviour, and
+      give the representation that removes it (Section~\ref{sec:rootcause}).
 \item \textbf{A calibrated uncertainty estimate} and a failure analysis localising
       the residual error to displacement magnitude rather than direction, which is
       a prescriptive rather than merely descriptive negative result
@@ -379,6 +384,24 @@ than the static baseline. This bounds the failure mode from below by a measurabl
 stronger estimator and directs capacity to what linear extrapolation cannot
 express.
 
+\paragraph{Input representation} The context is presented to the network as
+motion, not position. Stage 3 normalises coordinates to $[-1,1]$, while one frame of
+tissue displacement has standard deviation $\approx\!4\times10^{-3}$ in that space:
+the quantity to be predicted is under $1\,\%$ of the magnitude of the tensor carrying
+it. A pointwise encoder reading raw coordinates therefore spends its capacity
+describing where a point lies, and leaves the temporal transformer to recover motion
+by differencing tokens that agree to three significant figures. We instead supply, per
+point and per frame, the displacement relative to the most recent observed frame,
+rescaled to unit variance, concatenated with that frame's absolute position so that
+spatially varying deformation stays representable:
+\begin{equation}
+c_{w} \;=\; \big[\;(G_{t-W+w} - G_{t})\,s_c \;\big\Vert\; G_{t}\;\big],
+\qquad s_c = 1/\sigma\!\left(G_{\cdot} - G_{t}\right).
+\label{eq:ctx}
+\end{equation}
+Section~\ref{sec:rootcause} reports what the alternative costs, and why we regard this
+as the single most consequential design decision in the predictor.
+
 \paragraph{Architecture} Two pointwise encoders map observed geometry and the noisy
 candidate into a latent space. A transformer attends along the temporal axis
 independently per point, with point index folded into the batch dimension, and the
@@ -409,6 +432,19 @@ single scalar per horizon is fitted by least squares on training-segment windows
 only and applied to the model's contribution at inference. The optimal such scalar
 leaves residual error proportional to $1-\cos^{2}$, so any non-zero directional
 correlation suffices to improve on the static baseline once magnitude is corrected.
+
+% ============================================================================
+\subsection{Stage 7: Interactive demonstrator}
+\label{sec:demo}
+The pipeline terminates in a browser-based viewer that replays held-out frames of a
+real endoscopic recording and draws, per tracked point, the ground-truth geometry, our
+prediction, the constant-velocity extrapolation and the per-point spread across
+independently sampled futures. Only origins at or past the temporal split are
+exportable, so nothing on screen was trained on. The viewer selects among horizons so
+that the crossover of Section~\ref{sec:results} --- classical extrapolation ahead at
+$k{=}1$, the learned prior ahead by $k{=}3$ --- can be demonstrated rather than
+asserted. The baseline is drawn alongside our prediction by design: a demonstration
+that omits the estimator a method loses to is not evidence.
 
 % ============================================================================
 \section{Experimental Setup}
@@ -524,6 +560,39 @@ A predictor producing meaningless output would sit near zero. A cosine of
 only if the magnitude of the predicted motion is wrong. That is a far more
 tractable deficiency than an absent signal, and both corrective measures described
 in Sections~\ref{sec:predict} and~\ref{sec:system} follow from it.
+
+\subsection{Root cause: a signal below the scale of its own input}
+\label{sec:rootcause}
+The direction--magnitude split of Section~\ref{sec:dirmag} is a symptom. The cause is
+an input-scaling defect, and naming it is the most transferable result we report.
+
+An earlier formulation of this predictor, identical in every other respect, presented
+the context encoder with absolute normalised coordinates rather than the relative form
+of Equation~\ref{eq:ctx}. Under the ratio quantified there --- displacement at $0.74\,\%$
+of the magnitude of the coordinates carrying it, measured on our own data --- a
+pointwise encoder cannot separate motion from position, and the squared-error-optimal
+fallback is the conditional mean of the displacement. For tissue motion with
+approximately zero mean, that is approximately zero. The measured behaviour matches
+exactly: predictions tracked the static baseline to within $2\,\%$ at every horizon
+($0.004950$ against $0.004859$ at $k{=}1$, $0.013450$ against $0.013232$ at $k{=}3$)
+while directional agreement remained strongly positive.
+
+Two observations select this explanation over the alternatives. First, the deficit is
+uniform in $k$, where a capacity or data-scale limitation would worsen as the horizon
+grows. Second, every learned baseline in Table~\ref{tab:comparison} already receives
+its context expressed relative to the most recent frame, and all of them --- including
+a $1.4\times10^{5}$-parameter multilayer perceptron --- outperformed a
+$1.6\times10^{7}$-parameter diffusion model that did not. Across that comparison the
+decisive variable is the input representation, not capacity, architecture or training
+budget.
+
+We draw a general lesson rather than a local one. When the target is a small
+difference between large coordinates, the representation handed to the encoder
+determines whether the problem is learnable at all, and no amount of capacity
+substitutes for presenting the quantity of interest at a scale the first layer can
+resolve. The comparison protocol made this visible only because every method was held
+to identical data, budget and metrics; under per-method tuning the asymmetry would
+have been invisible.
 
 \subsection{Cost of inference}
 Table~\ref{tab:inference} separates accuracy from compute. A generative predictor's

@@ -6,6 +6,15 @@ This document answers two questions. How far is the system from reconstructing a
 predicting tissue deformation inside a live operating theatre, and what is the shortest
 honest route there.
 
+> **Status, 11 November 2026.** Module 7 has since run, and it changed the diagnosis in
+> §1.1. The predictor did not merely mispredict magnitude — it had collapsed to the
+> conditional mean, scoring 1.8% *worse* than assuming nothing moves and losing to a
+> 136k-parameter MLP. The cause was found and is not a tuning problem: the context
+> encoder was fed absolute coordinates, in which one frame of displacement is 0.74% of
+> the input magnitude. It now receives motion directly. **The execution sequence lives in
+> [RUNBOOK.md](RUNBOOK.md); this document remains the longer-range assessment, and §2
+> onward still stands.**
+
 Everything below is grounded in what the repository actually contains. Where a number is
 measured it is cited; where it is an estimate it says so.
 
@@ -29,6 +38,15 @@ equally far along.
 
 Two corrections are implemented and have never been evaluated: magnitude calibration at
 inference (no retraining needed) and the constant-velocity residual target (one retrain).
+
+**Superseded, 11 November.** Module 7 placed the model 8th of 11 methods at MPE
+0.009281 against a zero-motion baseline of 0.009117, tracking that baseline to within
+2% at every horizon — the signature of collapse to the conditional mean, not of a
+scale error. Neither correction above addresses the cause. The cause was the input
+representation, and all four modules now feed the encoder motion relative to the most
+recent frame at unit variance, with the absolute frame retained as an anchor. The
+residual target still matters, for a different reason: it moves the degenerate floor
+from the static baseline up to constant velocity.
 
 **The important asymmetry:** the system already knows where it wins. Constant velocity is
 better for one to three frames; the diffusion model is better from roughly four frames
@@ -243,12 +261,20 @@ achievable within the project, and publishable whether or not the first ever lan
 
 ---
 
-## 5. What to do this week
+## 5. What to do now
 
-1. **Run Modules 7 and 8.** Pre-flighted — `python3 tools/preflight.py` reports no
-   unbound names across all four modules, so a run will not die on a typo.
-2. **Run the calibration evaluation** — no retraining, so hours not days.
-3. **Close the reconstruction gap (Phase 4a).** EndoGaussian reports two minutes per
-   scene; we take fifteen. Sevenfold, for configuration work.
-4. **Put the monocular-versus-stereo question to Dr Jamil.** It decides whether live
-   operation is reachable inside this project, and it is his call rather than ours.
+Superseded by [RUNBOOK.md](RUNBOOK.md), which carries the ordered sequence, the
+pass/fail thresholds and the submission checklist. In brief: rebuild Module 4, retrain
+Module 5 once under the corrected encoder, evaluate with Modules 6 and 7, run the
+Module 8 ablations, export the Module 9 demonstrator, rebuild the paper.
+
+Two items from this document are *not* in the runbook, because they are decisions
+rather than steps, and they outlive the FYP:
+
+1. **Put the monocular-versus-stereo question to Dr Jamil** (§4, Phase 4 spike). It
+   decides whether live operation is reachable inside this project or belongs to the
+   programme that follows it.
+2. **Close the reconstruction gap** (Phase 4a). EndoGaussian reports two minutes per
+   scene; we take fifteen. Sevenfold, for configuration work rather than research, and
+   it remains the single largest obstacle between this system and live operation —
+   prediction accuracy never was.
