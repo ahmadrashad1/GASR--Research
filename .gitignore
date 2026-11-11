@@ -26,6 +26,10 @@ paper/*.blg
 paper/*.log
 paper/*.out
 paper/*.pdf
+# ...except the compiled manuscript. It is the deliverable, and an examiner or
+# reviewer should be able to read it from a clone without installing a LaTeX
+# engine and re-running the build against result files they do not have.
+!paper/research_paper.pdf
 # ...except the manuscript itself, which is a deliverable people need to open
 # from the repository without a LaTeX toolchain.
 !paper/main.pdf
