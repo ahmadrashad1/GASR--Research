@@ -26,4 +26,9 @@ fi
 echo "generating tables from results in: ${DRIVE:-<none set>}"
 python3 make_tables.py --drive "$DRIVE" --outdir .
 ./tectonic -X compile main.tex --outdir .
-echo "-> $(pwd)/main.pdf"
+
+# research_paper.pdf is the copy tracked in git, so a reader can open the manuscript
+# from a clone without a LaTeX engine or the result files. Refresh it here rather than
+# by hand, or it silently drifts behind main.tex.
+cp main.pdf research_paper.pdf
+echo "-> $(pwd)/research_paper.pdf (tracked)  |  $(pwd)/main.pdf (build output)"
