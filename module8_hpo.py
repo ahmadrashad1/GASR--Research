@@ -359,46 +359,62 @@ if RUN_A:
     else:
         ck = torch.load(path, map_location=DEVICE, weights_only=False)
         arch = ck['arch_cfg']
-        m = ConditionalDenoiser(arch['WINDOW_SIZE'], arch['LATENT_DIM'], arch['HIDDEN_DIM'],
-                                arch['N_HEADS'], arch['N_TF_LAYERS'], 0.1,
-                                arch.get('MAX_PRED_STEP', 8)).to(DEVICE)
-        m.load_state_dict(ck['ema']); m.eval()
-        diff = Diffusion(arch['T_DIFF'], 'v', 5.0)
-        scale, mode = ck['config']['DATA_SCALE'], arch.get('TARGET_MODE', 'delta')
-        idx = np.linspace(0, M_va - 1, min(A_SUBSET, M_va)).astype(int)
-        print(f'\n  STUDY A — inference cost vs accuracy '
-              f'({len(idx)} windows, checkpoint epoch {ck.get("epoch", "?")})')
-        grid = {}
-        for steps, ns in itertools.product(A_STEPS, A_SAMPLES):
-            rows = max(1, 64 // ns)
-            tot, n, t0 = 0.0, 0, time.time()
-            for bi in range(0, len(idx), rows):
-                sl = idx[bi:bi + rows]
-                ctx, k, dn = V['inp'][sl], V['ps'][sl], V['dnorm'][sl]
-                d_eq = ddim(m, diff, ctx, k, steps, ns) / scale
-                if mode == 'cv_residual':
-                    d_eq = d_eq + const_velocity_delta(ctx, k) * dn[:, None, None]
-                pred = ctx[:, -1] + to_physical(d_eq, dn)
-                e = mean_point_error(pred, V['tgt'][sl])
-                tot += e.sum().item(); n += len(e)
-            grid[f'{steps}x{ns}'] = {'steps': steps, 'samples': ns, 'mpe': tot / n,
-                                     'forward_passes': steps * ns,
-                                     'seconds': time.time() - t0}
-        results['A_inference'] = grid
-        print(f'    {"steps":>6} {"samples":>8} {"fwd":>6} {"MPE":>11} {"sec":>7}')
-        for key, g in sorted(grid.items(), key=lambda kv: kv[1]['mpe']):
-            print(f'    {g["steps"]:>6} {g["samples"]:>8} {g["forward_passes"]:>6} '
-                  f'{g["mpe"]:>11.6f} {g["seconds"]:>7.1f}')
-        bestA = min(grid.values(), key=lambda g: g['mpe'])
-        # the cheapest cell within 1% of the best is the operating point worth reporting:
-        # anything beyond it buys accuracy below the noise floor at real compute cost
-        knee = min((g for g in grid.values() if g['mpe'] <= bestA['mpe'] * 1.01),
-                   key=lambda g: g['forward_passes'])
-        results['A_best'], results['A_knee'] = bestA, knee
-        print(f'    best {bestA["steps"]}x{bestA["samples"]} MPE {bestA["mpe"]:.6f}; '
-              f'knee (within 1%) {knee["steps"]}x{knee["samples"]} at '
-              f'{knee["forward_passes"]} forward passes '
-              f'({bestA["forward_passes"] / knee["forward_passes"]:.1f}x cheaper)')
+        # Existence is not compatibility. After Module 4 is rebuilt at a new window, or
+        # after the context encoder changed shape, the checkpoint still sitting on Drive
+        # is stale -- and load_state_dict would raise a size mismatch halfway into a
+        # session rather than skipping. Check before loading and say which it is.
+        _why = None
+        if arch.get('CTX_MODE') != 'rel6':
+            _why = ("trained on raw absolute coordinates (no CTX_MODE); the context encoder "
+                    "now takes 6 channels")
+        elif arch.get('WINDOW_SIZE') != W_FULL:
+            _why = f"trained at W={arch.get('WINDOW_SIZE')}, dataset is W={W_FULL}"
+        if _why is not None:
+            print(f'\n  ⚠️  Study A skipped: {os.path.basename(path)} is incompatible '
+                  f'-- {_why}.\n      Re-run Module 5, then Study A. Studies B and C do not '
+                  f'need a checkpoint and still run.')
+            RUN_A = False
+        else:
+            m = ConditionalDenoiser(arch['WINDOW_SIZE'], arch['LATENT_DIM'], arch['HIDDEN_DIM'],
+                                    arch['N_HEADS'], arch['N_TF_LAYERS'], 0.1,
+                                    arch.get('MAX_PRED_STEP', 8)).to(DEVICE)
+            m.load_state_dict(ck['ema']); m.eval()
+            diff = Diffusion(arch['T_DIFF'], 'v', 5.0)
+            scale, mode = ck['config']['DATA_SCALE'], arch.get('TARGET_MODE', 'delta')
+            idx = np.linspace(0, M_va - 1, min(A_SUBSET, M_va)).astype(int)
+            print(f'\n  STUDY A — inference cost vs accuracy '
+                  f'({len(idx)} windows, checkpoint epoch {ck.get("epoch", "?")})')
+            grid = {}
+            for steps, ns in itertools.product(A_STEPS, A_SAMPLES):
+                rows = max(1, 64 // ns)
+                tot, n, t0 = 0.0, 0, time.time()
+                for bi in range(0, len(idx), rows):
+                    sl = idx[bi:bi + rows]
+                    ctx, k, dn = V['inp'][sl], V['ps'][sl], V['dnorm'][sl]
+                    d_eq = ddim(m, diff, ctx, k, steps, ns) / scale
+                    if mode == 'cv_residual':
+                        d_eq = d_eq + const_velocity_delta(ctx, k) * dn[:, None, None]
+                    pred = ctx[:, -1] + to_physical(d_eq, dn)
+                    e = mean_point_error(pred, V['tgt'][sl])
+                    tot += e.sum().item(); n += len(e)
+                grid[f'{steps}x{ns}'] = {'steps': steps, 'samples': ns, 'mpe': tot / n,
+                                         'forward_passes': steps * ns,
+                                         'seconds': time.time() - t0}
+            results['A_inference'] = grid
+            print(f'    {"steps":>6} {"samples":>8} {"fwd":>6} {"MPE":>11} {"sec":>7}')
+            for key, g in sorted(grid.items(), key=lambda kv: kv[1]['mpe']):
+                print(f'    {g["steps"]:>6} {g["samples"]:>8} {g["forward_passes"]:>6} '
+                      f'{g["mpe"]:>11.6f} {g["seconds"]:>7.1f}')
+            bestA = min(grid.values(), key=lambda g: g['mpe'])
+            # the cheapest cell within 1% of the best is the operating point worth reporting:
+            # anything beyond it buys accuracy below the noise floor at real compute cost
+            knee = min((g for g in grid.values() if g['mpe'] <= bestA['mpe'] * 1.01),
+                       key=lambda g: g['forward_passes'])
+            results['A_best'], results['A_knee'] = bestA, knee
+            print(f'    best {bestA["steps"]}x{bestA["samples"]} MPE {bestA["mpe"]:.6f}; '
+                  f'knee (within 1%) {knee["steps"]}x{knee["samples"]} at '
+                  f'{knee["forward_passes"]} forward passes '
+                  f'({bestA["forward_passes"] / knee["forward_passes"]:.1f}x cheaper)')
 
 # ════════════════════════════════════════════════════════════════════
 # STUDY B — context length
