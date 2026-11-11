@@ -142,6 +142,11 @@ Every table is generated from the result JSONs. Anything not yet produced prints
 `[pending]`, so the PDF always compiles. After steps 1–5 there should be no `[pending]`
 left except in the reconstruction table if Module 2 was not re-run.
 
+The headline sentence in the results section is **generated** from
+`module7_comparison.json`, not typed: whether the predictor beats the static baseline,
+leads the table, or does neither is derived from the file. You cannot ship a paper whose
+text contradicts its own table, and you do not have to remember to update it.
+
 **One consistency obligation.** Section 5 now describes the relative-context encoder,
 so the results must come from a run that used it. Do not ship a PDF whose method
 section and tables disagree — regenerate the tables, or say in the caption which

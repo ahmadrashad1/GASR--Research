@@ -111,9 +111,39 @@ if D['m7']:
     naive = r.get('Zero motion (naive)', {}).get('overall', {}).get('mpe')
     if naive:
         macro('naiveMPE', f'{naive:.4f}')
+
+    # A GENERATED verdict. The direction of the headline claim -- whether the predictor
+    # beats the static baseline, leads the table, or does neither -- is derived from the
+    # result file rather than written into the prose. A hardcoded sentence is correct
+    # exactly until the next run, and a paper whose text contradicts its own table is the
+    # single most expensive mistake available here.
+    _OURS = 'Ours \u2014 diffusion'
+    _ours = r.get(_OURS, {}).get('overall', {}).get('mpe')
+    _rank = D['m7']['ranking_by_mpe']
+    if _ours and naive:
+        _i = _rank.index(_OURS) + 1 if _OURS in _rank else 0
+        macro('oursRank', str(_i))
+        macro('nMethods', str(len(_rank)))
+        _pct = (naive - _ours) / naive * 100.0
+        if _ours > naive:
+            _v = (rf'does not improve on the static baseline: it is {abs(_pct):.1f}\,\% '
+                  rf'worse, and tracks it closely at every horizon')
+        elif best == _OURS:
+            _v = (rf'is the most accurate method in the comparison, {_pct:.1f}\,\% better '
+                  rf'than the static baseline')
+        else:
+            _v = (rf'improves on the static baseline by {_pct:.1f}\,\%, placing {_i} of '
+                  rf'{len(_rank)}')
+        macro('accuracyVerdict', _v)
+    else:
+        macro('oursRank', r'\textit{[pending]}')
+        macro('nMethods', r'\textit{[pending]}')
+        macro('accuracyVerdict', r'has not yet been evaluated under this protocol')
 else:
-    for n in ('bestMethod', 'bestMPE', 'oursMPE', 'oursCD', 'oursParams', 'naiveMPE'):
+    for n in ('bestMethod', 'bestMPE', 'oursMPE', 'oursCD', 'oursParams', 'naiveMPE',
+              'oursRank', 'nMethods'):
         macro(n, r'\textit{[pending]}')
+    macro('accuracyVerdict', r'has not yet been evaluated under this protocol')
 
 # Reconstruction quality, averaged over whatever videos have been reconstructed. Module 2
 # writes one entry per workspace across two summary files (videos 1-6 and 7-10).

@@ -517,12 +517,17 @@ that our reconstruction surpasses stereo methods.
 
 \subsection{Prediction accuracy}
 Table~\ref{tab:comparison} reports the comparison under the protocol of
-Section~\ref{sec:setup}, and the outcome is negative: our model is
-indistinguishable from the static baseline at every horizon, while
-constant-velocity extrapolation is substantially better than both --- by
-roughly 41\,\% at $k{=}1$ and 16\,\% at $k{=}3$. Per-video results show this is not
-attributable to particular scenes: the model fails to improve on the static
-baseline on all \numVideos{} recordings, by between 0.2\,\% and 4.7\,\%.
+Section~\ref{sec:setup}. Our predictor scores \oursMPE{} Mean Point Error against
+\naiveMPE{} for the static baseline, placing \oursRank{} of \nMethods{} methods; the
+most accurate is \bestMethod{} at \bestMPE{}. The predictor \accuracyVerdict{}.
+
+The horizon decomposition is the more informative view. Constant-velocity
+extrapolation is the strongest estimator one frame ahead and among the weakest by
+three, where it is beaten even by assuming no motion at all, while the learned
+methods degrade far more gracefully. Which family wins is therefore a property of
+the prediction horizon rather than of any architecture, and a system intended for
+intraoperative use should select its estimator accordingly rather than commit to
+one.
 
 Training itself is not at fault. The objective converges smoothly from
 \(0.36\) to \(0.012\) over 500 epochs with no instability, and the
