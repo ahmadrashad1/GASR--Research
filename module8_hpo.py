@@ -72,7 +72,13 @@ A_SUBSET  = 480          # held-out windows per cell. The full set x 20 cells wo
 # ── Study B/C: cheap backbone ────────────────────────────────────────
 BACKBONE_EPOCHS = 40
 BACKBONE_HIDDEN = 256
-BACKBONE_BATCH  = 32
+BACKBONE_BATCH  = 32     # reference batch AT W=4. Activation memory scales with
+                          # batch x N_ANCHOR x window, so a fixed 32 would be 16x the
+                          # W=4 footprint once the window is 32 and would OOM a T4
+                          # before Study B produced a single number. batch_for_window()
+                          # holds that product constant instead, which also keeps the
+                          # narrow configs fast rather than crippling them to suit the
+                          # widest one.
 BACKBONE_LR     = 1e-3
 B_WINDOWS = [4, 8, 16, 32]   # truncations of the 32-frame context. This is the cheap
                               # test of whether the longer window was worth rebuilding
@@ -82,7 +88,13 @@ B_WINDOWS = [4, 8, 16, 32]   # truncations of the 32-frame context. This is the 
 # ── Study D: diffusion ablations ─────────────────────────────────────
 D_EPOCHS        = 25
 D_TRAIN_FRAC    = 0.40
-D_BATCH         = 16
+D_BATCH         = 16     # effective batch, preserved by accumulation over D_MICRO
+D_MICRO         = 2      # rows per forward/backward. The denoiser sees
+                          # batch x N_ANCHOR x W token positions, the same quantity that
+                          # forced Module 5's MICRO_BATCH down to 2 at W=32. Without the
+                          # split, Study D OOMs on its first config; without preserving
+                          # the effective batch, it would screen at batch 2 and rank
+                          # configs on gradient noise rather than on the configs.
 D_LR            = 5e-4
 D_PROMOTE_TOP   = 2      # best configs are re-run at full budget, a two-rung successive
 D_PROMOTE_EPOCH = 75     # halving: cheap screening, then a fair comparison of finalists
@@ -136,6 +148,12 @@ def const_velocity_delta(ctx, k):
 # Same shape as the diffusion model's temporal encoder, minus the generative part, so
 # conclusions about optimisation transfer while each run costs about a minute.
 # ════════════════════════════════════════════════════════════════════
+def batch_for_window(window):
+    """Hold batch x window constant at the W=4 reference, so every Study B config runs
+    at the same activation footprint instead of the widest one deciding for all."""
+    return max(2, BACKBONE_BATCH * 4 // max(1, window))
+
+
 class Backbone(nn.Module):
     def __init__(self, hidden=BACKBONE_HIDDEN, layers=3, heads=8, window=W_FULL):
         super().__init__()
@@ -423,7 +441,7 @@ if RUN_B:
     print(f'\n  STUDY B — context length (truncating the {W_FULL}-frame window)')
     out = {}
     for w in B_WINDOWS:
-        mpe, secs, par = train_backbone(window=w)
+        mpe, secs, par = train_backbone(window=w, batch=batch_for_window(w))
         out[w] = {'mpe': mpe, 'seconds': secs, 'parameters': par}
         print(f'    W={w}  MPE {mpe:.6f}  ({secs:.0f}s)')
     results['B_context'] = out
@@ -517,18 +535,24 @@ def train_diffusion(cfg, epochs, frac):
         model.train()
         perm = rng.permutation(M_tr)[:n_use]
         for bi in range(0, n_use - D_BATCH + 1, D_BATCH):
-            sl = perm[bi:bi + D_BATCH]
-            x0 = tgt_tr[sl]
-            t = torch.randint(0, diff.T, (len(sl),), device=DEVICE)
-            noise = torch.randn_like(x0)
-            x_t = diff.sq[t][:, None, None] * x0 + diff.sq1[t][:, None, None] * noise
-            with torch.autocast(device_type=DEVICE, dtype=torch.float16,
-                                enabled=(DEVICE == 'cuda')):
-                out = model(T['inp'][sl], x_t, t, T['ps'][sl])
-                loss = (diff.w[t][:, None, None] *
-                        (out - diff.target(x0, noise, t)) ** 2).mean()
+            rows = perm[bi:bi + D_BATCH]
             opt.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
+            # Accumulate D_BATCH/D_MICRO micro-batches. Each loss is pre-scaled by its share
+            # of the batch, so the summed gradient equals one backward() on the full batch.
+            for mb in range(0, D_BATCH, D_MICRO):
+                sl = rows[mb:mb + D_MICRO]
+                if len(sl) == 0:
+                    continue
+                x0 = tgt_tr[sl]
+                t = torch.randint(0, diff.T, (len(sl),), device=DEVICE)
+                noise = torch.randn_like(x0)
+                x_t = diff.sq[t][:, None, None] * x0 + diff.sq1[t][:, None, None] * noise
+                with torch.autocast(device_type=DEVICE, dtype=torch.float16,
+                                    enabled=(DEVICE == 'cuda')):
+                    out = model(T['inp'][sl], x_t, t, T['ps'][sl])
+                    loss = (diff.w[t][:, None, None] *
+                            (out - diff.target(x0, noise, t)) ** 2).mean()
+                scaler.scale(loss * len(sl) / D_BATCH).backward()
             scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(opt); scaler.update()
@@ -585,7 +609,7 @@ else:
 # ════════════════════════════════════════════════════════════════════
 json.dump({'config': {'backbone_epochs': BACKBONE_EPOCHS, 'seed': SEED,
                       'a_subset': A_SUBSET, 'a_steps': A_STEPS, 'a_samples': A_SAMPLES,
-                      'b_windows': B_WINDOWS, 'd_epochs': D_EPOCHS,
+                      'b_windows': B_WINDOWS, 'd_epochs': D_EPOCHS, 'd_micro': D_MICRO,
                       'd_fraction': D_TRAIN_FRAC, 'val_windows': M_va},
            'results': results},
           open(f'{MODULE8_DIR}/module8_hpo.json', 'w'), indent=2)
