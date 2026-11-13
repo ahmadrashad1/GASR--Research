@@ -8,6 +8,43 @@ what it is, and change none of them without a reason written down.
 
 ---
 
+## Where this stands — 13 November 2026
+
+**Step 2 is done and it worked.** The retrain under the corrected context encoder
+completed 100/100 epochs in 11h15m at ~409 s/epoch, cosine annealed to 1.29e-06.
+
+| On the 649-window subset | CD |
+|---|---|
+| Ours, 4-sample mean | **0.012984** |
+| Constant velocity | 0.014151 |
+| Zero motion | 0.016195 |
+
+**+19.8% against the static baseline and +8.2% against constant velocity.** The
+predictor beats the estimator it previously lost to. The 0.74% input-scale defect was
+the cause, and feeding motion directly removed it.
+
+Two notes on that run, both since fixed in this repository:
+
+- It ended with a CUDA OOM in **QT4**, the DDIM step-count diagnostic — the one sampling
+  call that did not batch. QT1 to QT3 had already passed. Nothing was lost that Module 6
+  does not recompute, and the batching is fixed.
+- It reported *"run is incomplete"* because the session budget and the final epoch fired
+  together, so a finished run was labelled partial and scored on the subset rather than
+  the full validation set. Also fixed.
+
+**Re-running the Module 5 cell now trains nothing** (`start_epoch >= TOTAL_EPOCHS`) and
+goes straight to the quality tests on the **full** validation set — about 20 minutes for
+the headline number the paper quotes. Worth doing once, with the fixes above.
+
+> **Do not change `WINDOW_SIZE`, `MICRO_BATCH` or `TOTAL_EPOCHS` in Module 5.** They now
+> match the checkpoint exactly, confirmed by its parameter count of 16,318,467. Changing
+> the window alters `temporal_pe`'s shape, which retires the checkpoint and restarts
+> training from epoch 0 — eleven hours gone, silently, with no error.
+
+Next: step 3.
+
+---
+
 ## 0. Before the first run — 2 minutes
 
 ```bash

@@ -9,15 +9,13 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # CONFIG
 # ════════════════════════════════════════════════════════════════════
 N_ANCHOR        = 512
-WINDOW_SIZE     = 8      # frames of context this run TRAINS on -- a view onto the
-                          # 32-frame window Module 4 now builds, taking the most recent
-                          # frames. Decoupling the two is what makes the submission fit:
-                          # Module 8 Study B can sweep 4..32 on the cheap backbone for the
-                          # paper's context-length ablation, while the diffusion model
-                          # trains at a width whose activation footprint still allows
-                          # MICRO_BATCH=8 and therefore a COMPLETE run inside one Colab
-                          # session. W=32 would be ~8x the epoch time for a hypothesis
-                          # the backbone can test for free.
+WINDOW_SIZE     = 32     # frames of context, matching the window Module 4 builds. This is
+                          # what the trained checkpoint uses: 11h15m for 100 epochs at
+                          # ~409s/epoch on a 22GB card, and it beat constant velocity by
+                          # 8.2%. Lowering it to 8 would be ~4x cheaper per epoch and is a
+                          # reasonable thing to try, but it RETIRES the existing checkpoint
+                          # -- temporal_pe changes shape -- so do not change this number
+                          # unless a retrain from epoch 0 is what you intend.
 LATENT_DIM      = 512
 HIDDEN_DIM      = 1024
 N_HEADS         = 8
@@ -91,39 +89,12 @@ TARGET_MODE     = 'cv_residual'
 assert TARGET_MODE in ('delta', 'cv_residual')
 
 BATCH_SIZE      = 32             # effective batch size (training dynamics) -- unchanged
-MICRO_BATCH     = 8               # holds BATCH*N_ANCHOR*W -- the quantity that actually
-                                   # binds -- at 8*512*8 = 32,768 token positions, the same
-                                   # footprint the old MICRO_BATCH=16 had at W=4. Raise or
-                                   # lower it with W so that product stays put.
-                                   # (original note, still the reason the knob exists:)
-                                   # was 16, which was tuned for a 4-FRAME window. The
-                                   # temporal transformer sees BATCH*N_ANCHOR*W token
-                                   # positions, so W=4->32 is 8x the activation memory in
-                                   # the one place that was already the binding constraint
-                                   # (batch=32 at W=4 overran a T4 by ~128MiB). 2 keeps the
-                                   # footprint at roughly the old W=4 level. The cost is
-                                   # ACCUM_STEPS=16, so ~8x the iterations per epoch on an
-                                   # architecture whose epoch time tracks iteration count:
-                                   # budget ~800s/epoch, not ~100s. Raise it the moment a
-                                   # run proves there is headroom.
-                                   # (original note, still the reason the knob exists:)
-                                   # per-forward-pass batch -- fits a T4's ~14.5GB
-                                   # (encode_context folds N_ANCHOR into the batch dim for its
-                                   # temporal transformer, so activation memory scales with
-                                   # BATCH_SIZE * N_ANCHOR = 32*512 = 16,384 rows through a
-                                   # 6-layer/1024-wide transformer -- BATCH_SIZE=32 alone OOMs
-                                   # a T4 on the very first forward pass. Gradient accumulation
-                                   # over ACCUM_STEPS micro-batches reproduces the exact same
-                                   # effective-batch=32 gradient without ever materialising more
-                                   # than MICRO_BATCH*N_ANCHOR rows of activations at once.
-                                   # 16 rather than 8: the batch=32 OOM only exceeded the T4's
-                                   # budget by ~128MiB out of 14.56GiB, so batch=16 needs roughly
-                                   # half that activation memory (~7.2GB) -- a large safety
-                                   # margin -- while halving the per-epoch iteration count versus
-                                   # 8, which is the main lever on wall-clock time: this
-                                   # architecture is kernel-launch-overhead-bound at small batch
-                                   # sizes, so epoch time tracks iteration count more than FLOPs.
-                                   # Drop to 8 (or lower) only if this still OOMs in practice.
+MICRO_BATCH     = 2               # rows per forward/backward. The context encoder sees
+                                   # MICRO_BATCH * N_ANCHOR * W token positions, so at W=32
+                                   # this is the same 32,768-position working set that
+                                   # MICRO_BATCH=16 gave at W=4. Verified in practice: the
+                                   # 100-epoch run completed without an OOM in training.
+                                   # Keep MICRO_BATCH * W at about 64 when changing either.
 ACCUM_STEPS     = max(1, BATCH_SIZE // MICRO_BATCH)
 LR              = 5e-4
 WARMUP_EPOCHS   = 35
@@ -148,14 +119,11 @@ WARMUP_EPOCHS   = 35
 # 400 of those epochs were spent overfitting. 200 leaves generous margin past where the
 # previous run peaked while letting the cosine schedule anneal fully, and CKPT_BEST still
 # keeps whichever epoch actually validates best.
-TOTAL_EPOCHS    = 150
-# 150, not 200: at W=8/MICRO_BATCH=8 an epoch costs ~200s, so 150 epochs is ~8.3h of
-# training plus ~10% validation overhead -- inside SESSION_BUDGET_HOURS with margin.
-# That matters more than the extra 50 epochs: a run that ANNEALS FULLY in one session
-# is a finished result, where one that needs four sessions is four chances to lose the
-# runtime. The previous run peaked at epoch ~40-60 of 500, so 150 is generous headroom
-# past where this architecture has ever improved, and CKPT_BEST keeps the best epoch
-# regardless.
+TOTAL_EPOCHS    = 100
+# 100 is what was run, and the run finished: the cosine annealed to 1.29e-06 against a
+# MIN_LR of 1e-6, so the schedule is spent and further epochs under this horizon would
+# train at the floor. Raising it is REFUSED on resume by design -- lengthening a cosine
+# horizon re-heats annealed weights -- so a longer run means starting from epoch 0.
 EMA_DECAY       = 0.9999
 GRAD_CLIP       = 1.0
 # VAL_EVERY / VAL_SUBSET_SIZE: an older run validated only every 50 epochs on the full
@@ -1175,6 +1143,16 @@ else:
                 postfix['no_improve'] = f'{epochs_without_improvement}/{PATIENCE}'
         pbar.set_postfix(**postfix)
 
+        if elapsed_hr >= SESSION_BUDGET_HOURS and epoch + 1 >= TOTAL_EPOCHS:
+            # The budget and the last epoch landed together. Training DID finish, so
+            # calling this 'time_budget' would mislabel a complete run as partial and send
+            # the quality tests to the representative subset instead of the full
+            # validation set -- which is exactly what happened on the first real run.
+            print(f'\n✅ Reached epoch {epoch + 1}/{TOTAL_EPOCHS} as the session budget '
+                  f'({SESSION_BUDGET_HOURS}h) expired. Training is complete.')
+            stop_reason = 'epochs'
+            break
+
         if elapsed_hr >= SESSION_BUDGET_HOURS:
             print(f'\n⏱  Session time budget ({SESSION_BUDGET_HOURS}h) reached at epoch '
                   f'{epoch + 1}/{TOTAL_EPOCHS} — checkpoint saved to {CKPT_LATEST}.')
@@ -1306,9 +1284,20 @@ if val_cds:
     # the 50-step number computed on the full val set, so its "10-step is 3.6x better"
     # reading was a dataset difference, not a step-count effect.
     cd_by_steps = {}
+    # Batched, like evaluate_cd and QT6. This was the one sampling call in the module that
+    # ran every diagnostic window at once: BATCH_SIZE windows x FINAL_SAMPLES trajectories
+    # is 128 rows, and at W=32 that is 128 x N_ANCHOR x 32 token positions through the
+    # context encoder -- a 12 GiB allocation that OOMed after QT1-QT3 had already passed,
+    # losing QT4 to QT6 at the very end of an 11-hour run. EVAL_ROWS // FINAL_SAMPLES is
+    # the same 64-row working set QT2 completes with.
+    _rows4 = max(1, EVAL_ROWS // max(1, FINAL_SAMPLES))
     for _st in (5, 10, 20, 50):
-        x0_st = ddim_sample(ema_model, diag_ctx, diag_h, steps=_st, eta=0.0,
-                             n_samples=FINAL_SAMPLES)
+        _parts = []
+        for _b in range(0, len(diag_idx), _rows4):
+            _sl = slice(_b, _b + _rows4)
+            _parts.append(ddim_sample(ema_model, diag_ctx[_sl], diag_h[_sl], steps=_st,
+                                      eta=0.0, n_samples=FINAL_SAMPLES))
+        x0_st = torch.cat(_parts, dim=0)
         cd_by_steps[_st] = chamfer_distance(
             base_pred(diag_ctx, diag_h) + to_physical(x0_st, diag_dnorm), diag_tgt).item()
     print(f'\nQT4 — DDIM step count (EMA model, same {len(diag_idx)} windows, '
