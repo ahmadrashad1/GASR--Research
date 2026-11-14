@@ -134,6 +134,16 @@ PRED_STEPS = sorted(set(np.unique(tr['ps']).tolist()))
 meta4 = json.load(open(f'{COMBINED_DIR}/module4_metadata.json'))
 video_order = meta4['video_order']
 
+# Dataset provenance -- see the note in Module 5. *_inputs/_targets can be left over from
+# the notebook's original W=4 Module 4 cell while every other array, and the metadata,
+# come from module4_improved.
+assert (W == meta4['window_size'] and len(tr['inp']) == len(tr['ps'])
+        and len(va['inp']) == len(va['ps'])), (
+    f"Module 4 arrays in {COMBINED_DIR} are inconsistent: inputs are W={W} with "
+    f"{len(tr['inp']):,}/{len(va['inp']):,} train/val windows, but the metadata says "
+    f"W={meta4['window_size']} and pred_step holds {len(tr['ps']):,}/{len(va['ps']):,}. "
+    f"Re-run Module 4 (module4_improved), then re-run this module.")
+
 # Targets are scaled to ~unit variance for optimisation only; every reported metric is
 # computed after inverting this, in physical normalised-position units.
 BASE_SCALE = float(1.0 / (tr['delta'].std() + 1e-8))

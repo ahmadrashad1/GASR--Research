@@ -38,6 +38,12 @@ val_tgt   = np.load(f'{COMBINED_DIR}/val_targets.npy').astype(np.float32)
 val_dnorm = np.load(f'{COMBINED_DIR}/val_disp_norm.npy').astype(np.float32)
 val_ps    = np.load(f'{COMBINED_DIR}/val_pred_step.npy').astype(np.int64)   # prediction horizon
 
+# Dataset provenance -- see the note in Module 5.
+assert len(val_inp) == len(val_ps), (
+    f'val_inputs.npy holds {len(val_inp):,} windows but val_pred_step.npy holds '
+    f'{len(val_ps):,} -- the arrays in {COMBINED_DIR} come from two different Module 4 '
+    f'runs. Re-run Module 4 (module4_improved), then re-run this module.')
+
 val_inp_t   = torch.from_numpy(val_inp).to(DEVICE)
 val_tgt_t   = torch.from_numpy(val_tgt).to(DEVICE)
 val_dnorm_t = torch.from_numpy(val_dnorm).to(DEVICE)

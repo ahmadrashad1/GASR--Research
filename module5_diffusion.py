@@ -276,6 +276,17 @@ val_tgt      = np.load(f'{COMBINED_DIR}/val_targets.npy').astype(np.float32)
 val_delta    = np.load(f'{COMBINED_DIR}/val_deltas.npy').astype(np.float32)
 val_dnorm    = np.load(f'{COMBINED_DIR}/val_disp_norm.npy').astype(np.float32)
 val_ps       = np.load(f'{COMBINED_DIR}/val_pred_step.npy').astype(np.int64)
+
+# Dataset provenance. *_inputs.npy and *_targets.npy are written by both the notebook's
+# original Module 4 cell (W=4) and module4_improved (W=32), while *_deltas, *_disp_norm,
+# *_pred_step and *_video_id come only from module4_improved. Running the old cell after
+# the new one leaves the two sets describing different datasets with different window
+# counts -- caught here, rather than as an opaque shape error inside _cv_delta below.
+for _split, _inp, _ps in (('train', train_inp, train_ps), ('val', val_inp, val_ps)):
+    assert len(_inp) == len(_ps), (
+        f'{_split}_inputs.npy holds {len(_inp):,} windows but {_split}_pred_step.npy holds '
+        f'{len(_ps):,}. The arrays in {COMBINED_DIR} come from two different Module 4 runs '
+        f'-- re-run Module 4 (module4_improved) to rebuild them all, then re-run this cell.')
 assert train_ps.max() <= MAX_PRED_STEP and val_ps.max() <= MAX_PRED_STEP, (
     f'Module 4 emitted pred_steps up to {max(train_ps.max(), val_ps.max())} but the horizon '
     f'embedding only has room for {MAX_PRED_STEP} -- raise MAX_PRED_STEP (this changes the '

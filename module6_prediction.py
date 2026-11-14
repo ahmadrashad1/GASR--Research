@@ -571,6 +571,25 @@ _m4_vid = np.load(f'{COMBINED_DIR}/val_video_id.npy')
 _m4_ps  = np.load(f'{COMBINED_DIR}/val_pred_step.npy')
 _m4_tgt = np.load(f'{COMBINED_DIR}/val_targets.npy')
 
+# Dataset provenance, checked before the comparison below can fail as a broadcast error.
+# val_inputs.npy and val_targets.npy are written by BOTH the notebook's original Module 4
+# cell (W=4) and module4_improved (W=32); val_pred_step.npy and the delta/disp_norm arrays
+# are written only by module4_improved. Because module4_improved reads its workspace list
+# from the older cell's metadata.json, running the two in order reverts the context window
+# while module4_metadata.json still advertises the new one -- and every number below would
+# then describe a dataset the model was never trained on.
+_W_FILE = _m4_inp.shape[1]
+if _W_FILE != WINDOW_SIZE or len(_m4_inp) != len(_m4_ps):
+    raise SystemExit(
+        f'\n  INCONSISTENT MODULE 4 ARRAYS in {COMBINED_DIR}\n'
+        f'      val_inputs.npy        : W={_W_FILE}, {len(_m4_inp):,} windows\n'
+        f'      val_pred_step.npy     : {len(_m4_ps):,} windows\n'
+        f'      module4_metadata.json : W={WINDOW_SIZE}\n'
+        f'    These arrays came from two different Module 4 runs. Re-run Module 4 (the\n'
+        f'    module4_improved cell) to rebuild every array at W={WINDOW_SIZE}, then\n'
+        f'    re-run this module.\n'
+        f'    The trained checkpoint is unaffected -- it never reads these files.')
+
 _worst = 0.0
 _checked = 0
 for vid in videos:

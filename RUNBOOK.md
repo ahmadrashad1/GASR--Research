@@ -78,26 +78,45 @@ Expect `PASS: 0 suspect name(s)`.
 
 ## 1. Module 4 — rebuild the dataset — ~15 min
 
-Cell 34. Builds the 32-frame window.
+**Cell 32 first, then cell 34 — and never cell 32 alone.**
+
+This ordering is not optional and it is the one trap in the whole pipeline. Cell 32 is the
+original Module 4; cell 34 is `module4_improved`. Cell 34 reads its workspace list from the
+`metadata.json` that cell 32 writes, so in a fresh runtime cell 32 has to run first. Cell 32
+used to write `train_inputs.npy`, `val_inputs.npy` and the two target arrays itself, at
+`W=4` — the same filenames cell 34 writes at `W=32`. So running cell 32 after cell 34, or
+running cell 32 and stopping, silently reverted the dataset to a 4-frame window while
+`module4_metadata.json` still said 32.
+
+That is fixed: cell 32 now writes those four arrays under a `legacy_` prefix, and Modules 5,
+6 and 7 each refuse to start if the context arrays and the metadata disagree. If you ever
+see `INCONSISTENT MODULE 4 ARRAYS`, the fix is to re-run cell 34. Nothing is lost — the
+trained checkpoint never reads these files.
 
 **Check:** the printed window count is around 6,500 total, down ~11% from 7,371. A much
 larger drop means a video is shorter than `W + max(k)` and was skipped — find out which.
 
 ---
 
-## 2. Module 5 — train — ~9 h, one session
+## 2. Module 5 — train — already done, do not repeat
 
-Cell 36. `TOTAL_EPOCHS = 150`, `WINDOW_SIZE = 8`, `MICRO_BATCH = 8`,
-`TARGET_MODE = 'cv_residual'`.
+Cell 36. `WINDOW_SIZE = 32`, `MICRO_BATCH = 2`, `TOTAL_EPOCHS = 100`,
+`TARGET_MODE = 'cv_residual'`. **These match the trained checkpoint exactly and must not be
+changed** — see the warning in *Where this stands* above.
 
-**Check at the top of the run**, before leaving it:
+Training finished on 13 November 2026 at epoch 100/100. Re-running the cell trains nothing
+(`start_epoch >= TOTAL_EPOCHS`) and goes straight to the quality tests, which is worth ~20
+minutes once: a completed run scores the **full** validation set rather than the 649-window
+subset, and that full-set number is the one the paper quotes.
+
+**Check at the top of any re-run:**
 
 | Line | Expect |
 |---|---|
-| `Context` | `last 8 of the 32 frames Module 4 built` |
+| `Context` | `last 32 of the 32 frames Module 4 built` — or the line absent, which is also correct at W=32 |
 | `CTX_SCALE` | a number in the tens or low hundreds, not ~1 |
 | `Target` | `cv_residual` |
-| checkpoint | *retired and restarted from epoch 0* — not resumed |
+| checkpoint | **resumed at epoch 100** — if it says *retired and restarted from epoch 0*, stop the cell immediately: the config no longer matches the checkpoint |
 | epoch time | ~200 s. At ~800 s, `MICRO_BATCH` did not take; stop and fix |
 
 **Check at the end:** the run reaches epoch 150 and the cosine schedule anneals fully.
