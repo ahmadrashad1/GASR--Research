@@ -2,7 +2,7 @@
 
 **Date:** 17 November 2026
 **Project:** S26-017-R-GASR — GASR: 4D Surgical Scene Reconstruction & Deformation Prediction
-**Status:** awaiting approval
+**Status:** approved 17 November 2026. Implementation plan: `docs/superpowers/plans/2026-11-17-clinical-demo-app.md`
 
 ---
 
