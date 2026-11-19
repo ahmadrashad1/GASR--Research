@@ -218,6 +218,14 @@ EVAL_ROWS        = 64              # eval rows resident at once = windows * n_sa
 
 CHECKPOINT_EVERY = 20              # clean multiple of VAL_EVERY
 SESSION_BUDGET_HOURS = 11.0        # Colab Pro 12h session -- 1h reserved as buffer
+# EVAL_ONLY turns this cell into a read-only quality-test run on the checkpoint already
+# on Drive: no training, no checkpoint writes of any kind, and the quality tests always
+# score the FULL validation set rather than the representative subset. Set it before this
+# cell runs (it is read through globals(), like DRIVE_BASE) to re-run the tests after a
+# disconnect without risking the eleven hours already in the checkpoint.
+if 'EVAL_ONLY' not in globals():
+    EVAL_ONLY = False
+
 FRESH_START      = False           # True forces epoch 0 even from a compatible checkpoint.
                                     # Not needed to start this run clean: adding horizon
                                     # conditioning changes _arch_cfg, so any pre-horizon
@@ -828,7 +836,14 @@ train_losses, val_cds, val_epochs, val_cds_naive = [], [], [], []
 global_step = 0                  # optimizer steps taken, drives the EMA decay ramp
 epochs_without_improvement = 0   # early-stopping counter, persisted across resumes
 
-if FRESH_START and os.path.exists(CKPT_LATEST):
+if EVAL_ONLY:
+    assert os.path.exists(CKPT_LATEST) or os.path.exists(CKPT_BEST), (
+        f'EVAL_ONLY=True but no checkpoint exists in {MODULE5_DIR}. There is nothing to '
+        f'evaluate -- train first, or point MODULE5_DIR at the right folder.')
+    print('🔒 EVAL_ONLY=True — no training, and no checkpoint will be written. The '
+          'quality tests will score the full validation set.')
+
+if FRESH_START and not EVAL_ONLY and os.path.exists(CKPT_LATEST):
     _backup = CKPT_LATEST.replace('.pth', f'_pre_fresh_start_{int(time.time())}.pth')
     os.rename(CKPT_LATEST, _backup)
     print(f'♻️  FRESH_START=True — existing checkpoint moved to {_backup}; training from epoch 0.')
@@ -839,6 +854,11 @@ if os.path.exists(CKPT_LATEST):
         arch_ok = ck.get('arch_cfg') == _arch_cfg
         data_ok = ck.get('data_fingerprint') == _data_fingerprint
         if arch_ok and not data_ok:
+            assert not EVAL_ONLY, (
+                'EVAL_ONLY=True, but this checkpoint predates the current Module 4 dataset '
+                '(different data fingerprint). Evaluating it against this data would report '
+                'numbers for a pairing that never existed. Re-run Module 4, or evaluate the '
+                'checkpoint that matches it.')
             backup = CKPT_LATEST.replace('.pth', f'_predates_data_change_{int(time.time())}.pth')
             os.rename(CKPT_LATEST, backup)
             print(f'⚠️  Module 4\'s dataset has changed since this checkpoint was saved (different '
@@ -921,10 +941,21 @@ if os.path.exists(CKPT_LATEST):
             print(f'✅ Resumed from epoch {start_epoch}/{TOTAL_EPOCHS}  |  best CD: {best_cd:.6f}  '
                   f'|  global_step: {global_step:,}')
         else:
+            assert not EVAL_ONLY, (
+                f'EVAL_ONLY=True, but the checkpoint architecture does not match this '
+                f'cell\'s config, so its weights cannot be loaded. Do NOT "fix" this by '
+                f'changing the config until it matches -- align the config with the '
+                f'checkpoint instead (WINDOW_SIZE, MICRO_BATCH and TOTAL_EPOCHS are the '
+                f'usual culprits). Checkpoint: {ck.get("arch_cfg")}')
             backup = CKPT_LATEST.replace('.pth', f'_incompatible_{int(time.time())}.pth')
             os.rename(CKPT_LATEST, backup)
             print(f'⚠️  Checkpoint architecture mismatch — backed up to {backup}, starting fresh')
     except Exception as e:
+        if EVAL_ONLY:
+            raise SystemExit(
+                f'EVAL_ONLY=True and {CKPT_LATEST} failed to load ({e}). Not renaming it: '
+                f'in evaluation mode this cell never touches the checkpoint. If Drive '
+                f'truncated the write, the file size will be short of the model size.')
         backup = CKPT_LATEST.replace('.pth', f'_corrupt_{int(time.time())}.pth')
         os.rename(CKPT_LATEST, backup)
         print(f'⚠️  Checkpoint failed to load ({e}) — backed up to {backup}, starting fresh')
@@ -1022,8 +1053,11 @@ def evaluate_cd(m, indices=None, steps=FINAL_STEPS, n_samples=FINAL_SAMPLES,
     return out
 
 
-if start_epoch >= TOTAL_EPOCHS:
-    print(f'Training already complete ({start_epoch} epochs). Skipping to evaluation.')
+if EVAL_ONLY or start_epoch >= TOTAL_EPOCHS:
+    if EVAL_ONLY:
+        print(f'Evaluation only — skipping training at epoch {start_epoch}.')
+    else:
+        print(f'Training already complete ({start_epoch} epochs). Skipping to evaluation.')
 else:
     session_start = time.time()
     rng = np.random.default_rng(SEED + start_epoch)
@@ -1198,7 +1232,10 @@ print('='*60)
 # the time budget part-way through, and paying that on every intermediate session is pure
 # waste. Intermediate sessions therefore score the representative subset instead (the same
 # windows the training-time checks use) and say so.
-_training_complete = (globals().get('stop_reason') in ('epochs', 'early_stop')
+# EVAL_ONLY exists to produce the reportable number, so it always scores the full set --
+# otherwise re-running the tests after a disconnect would quietly hand back the subset.
+_training_complete = (EVAL_ONLY
+                       or globals().get('stop_reason') in ('epochs', 'early_stop')
                        or start_epoch >= TOTAL_EPOCHS)
 _qt_idx = None if _training_complete else val_subset_idx
 _qt_scope = ('FULL val set' if _training_complete

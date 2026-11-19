@@ -13,6 +13,10 @@ MODULE5_DIR  = f'{DRIVE_BASE}/module5'
 CKPT_BEST    = f'{MODULE5_DIR}/diffusion_ckpt_best.pth'
 CKPT_LATEST  = f'{MODULE5_DIR}/diffusion_ckpt.pth'
 
+# NOTE: Module 5 now has an EVAL_ONLY mode that reruns the real QT1-QT6 suite on the saved
+# checkpoint without training. Prefer that for the reportable numbers -- it is the same code
+# that produced them. This script remains useful for one thing it does not do: sweeping step
+# and sample counts across BOTH checkpoints side by side.
 STEP_COUNTS  = [5, 10, 20, 30, 50]   # DDIM step counts to sweep, deterministic (eta=0)
 # Second sweep axis: how many independent trajectories are averaged into one prediction.
 # Chamfer Distance scores a single point prediction and is minimised by the conditional
@@ -95,8 +99,13 @@ class ConditionalDenoiser(nn.Module):
                  max_pred_step):
         super().__init__()
         D = latent_dim
-        self.context_geo = GeomMLP(3, hidden_dim, latent_dim, dropout)
+        # Six input channels, not three: motion relative to the last observed frame,
+        # concatenated with that frame's absolute position. Must mirror
+        # module5_diffusion.py exactly or the state_dict will not load. ctx_scale travels
+        # in the checkpoint as a buffer, so the 1.0 here is overwritten on load.
+        self.context_geo = GeomMLP(6, hidden_dim, latent_dim, dropout)
         self.target_geo  = GeomMLP(3, hidden_dim, latent_dim, dropout)
+        self.register_buffer('ctx_scale', torch.tensor(1.0))
         self.temporal_pe = nn.Parameter(torch.randn(window_size, D) * 0.02)
 
         tf_layer = nn.TransformerEncoderLayer(
@@ -123,8 +132,15 @@ class ConditionalDenoiser(nn.Module):
         )
 
     def encode_context(self, ctx):
+        _w = self.temporal_pe.shape[0]
+        if ctx.shape[1] > _w:
+            ctx = ctx[:, -_w:]
         B, Wn, N_A, _ = ctx.shape
-        h = self.context_geo(ctx)
+        last = ctx[:, -1:]                                  # (B, 1, N_A, 3)
+        feat = torch.cat([(ctx - last) * self.ctx_scale,    # motion, ~unit variance
+                          last.expand(-1, Wn, -1, -1)],     # where that motion happens
+                         dim=-1)                            # (B, W, N_A, 6)
+        h = self.context_geo(feat)
         h = h + self.temporal_pe[None, :, None, :]
         h = h.permute(0, 2, 1, 3).reshape(B * N_A, Wn, -1)
         h = self.temporal_transformer(h)
