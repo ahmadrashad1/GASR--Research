@@ -193,11 +193,21 @@ beating constant velocity. Report it as the ablation result it is.
 
 ### Study C — the one still to run
 
-Cell 46 with `RUN_A=False, RUN_B=False, RUN_C=True`. It trains 16 backbones. At the
-deployed W=32 that would be ~45 h, so it runs at `C_WINDOW = 8` over `C_EPOCHS = 12`
-instead — **about 1.7 h**, printed as a budget from Study B's own measured timings before
-anything starts. Study C ranks optimisation factors against each other; its absolute MPE is
-not comparable with Study A or Module 7, and the output JSON says so.
+Cell 46 with `RUN_A=False, RUN_B=False, RUN_C=True`. It trains 16 backbones. Study B
+measured the per-run cost exactly, so the budget is arithmetic rather than a guess:
+
+| Window | 40 epochs (Study B) | 16 runs × 12 epochs |
+|---|---|---|
+| W=32 (deployed) | 10,242 s | **~13.7 h** |
+| W=8 (best) | 3,389 s | ~4.5 h |
+| **W=4 (used)** | 2,156 s | **~2.9 h** |
+
+So it runs at `C_WINDOW = 4`, `C_EPOCHS = 12`. The window is cut harder than the schedule
+on purpose: a short schedule systematically favours fast-converging settings, which is
+precisely what the optimiser and learning-rate rows are measuring, so shrinking epochs
+would bias the very ranking the study exists to produce. Study C reports sensitivity **at a
+fixed budget**; its absolute MPE is not comparable with Study A or Module 7, and the output
+JSON records that. The real estimate is printed before any training starts — read it.
 
 `RUN_D` retrains the diffusion model once per ablation. Leave it `False` unless there is a
 spare day.

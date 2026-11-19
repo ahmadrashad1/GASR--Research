@@ -90,12 +90,20 @@ BACKBONE_LR     = 1e-3
 # at a narrower window and a shorter schedule instead, because Study C measures the
 # RELATIVE sensitivity to optimiser, learning rate, schedule, decay, batch, width and
 # depth, and that ordering is what transfers -- not the absolute MPE of each cell.
-C_WINDOW = 8             # Study B's best-performing window (MPE 0.008204), so this is
-                          # the most defensible operating point to probe rather than an
-                          # arbitrary compromise. ~3x cheaper per run than W=32.
-C_EPOCHS = 12            # against BACKBONE_EPOCHS=40. Enough to order the factors. The
-                          # budget printed before the study starts is derived from Study
-                          # B's own measured seconds at this window, not an estimate.
+C_WINDOW = 4             # Study B's measured cost per 40-epoch run: W=4 2156s, W=8
+                          # 3389s, W=16 5780s, W=32 10242s. At W=8 the 16 runs come to
+                          # 4.5 h; at W=4, 2.9 h. W=4 also sits closer to W=8 (the best
+                          # window) in MPE than W=32 does, so nothing is gained by
+                          # probing the widest.
+C_EPOCHS = 12            # against BACKBONE_EPOCHS=40. Cutting epochs is the RISKIER of
+                          # the two levers here -- a short schedule systematically
+                          # favours fast-converging settings, which is exactly what the
+                          # optimiser and learning-rate rows measure -- so the window is
+                          # cut harder and this is kept high enough for SGD and the small
+                          # learning rates to move. Read Study C as sensitivity at a
+                          # fixed budget, which is what the output JSON records. The
+                          # budget printed before training starts comes from Study B's
+                          # measured seconds, not from this comment.
 
 B_WINDOWS = [4, 8, 16, 32]   # truncations of the 32-frame context. This is the cheap
                               # test of whether the longer window was worth rebuilding
