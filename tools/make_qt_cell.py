@@ -36,6 +36,46 @@ QT_FIRST = 'if len(train_losses) >= 10:'
 QT_LAST = '✅ ALL QUALITY TESTS PASSED'
 
 
+
+def check_calls(out):
+    """Every call to a locally-defined function must match its signature.
+
+    compile() does not check arity, so a template calling a lifted definition with the
+    wrong number of arguments produces a file that imports cleanly and then raises
+    TypeError in Colab. That is how ConditionalDenoiser(7 args) shipped: the class takes
+    only self and reads its config from module scope, but the copies in Modules 6-8 take
+    the config as parameters, and the template followed those.
+    """
+    tree = ast.parse(out)
+    sigs = {}
+    for n in tree.body:
+        if isinstance(n, ast.FunctionDef):
+            a = n.args
+            sigs[n.name] = (len(a.args) - len(a.defaults), len(a.args), bool(a.vararg), a)
+        elif isinstance(n, ast.ClassDef):
+            init = next((x for x in n.body
+                         if isinstance(x, ast.FunctionDef) and x.name == '__init__'), None)
+            if init:
+                a = init.args
+                sigs[n.name] = (len(a.args) - 1 - len(a.defaults), len(a.args) - 1,
+                                bool(a.vararg), a)
+    bad = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if node.func.id not in sigs:
+            continue
+        lo, hi, star, a = sigs[node.func.id]
+        npos = len(node.args)
+        kw = {k.arg for k in node.keywords if k.arg}
+        unknown = kw - {x.arg for x in a.args}
+        if (npos > hi and not star) or (npos + len(kw) < lo) or unknown:
+            bad.append(f'  line {node.lineno}: {node.func.id}() given {npos} positional '
+                       f'and {sorted(kw)}, but it accepts {lo}..{hi} positional'
+                       + (f'; unknown keyword(s) {sorted(unknown)}' if unknown else ''))
+    return bad
+
+
 def main():
     if not os.path.exists(SRC):
         sys.exit(f'{SRC} not found -- run this from the repository root.')
@@ -49,6 +89,16 @@ def main():
     if missing:
         sys.exit(f'{SRC} no longer defines, at module level: {missing}\n'
                  f'Module 5 has been restructured; update DEFS in this script.')
+
+    init = next((n for n in found['ConditionalDenoiser'].body
+                 if isinstance(n, ast.FunctionDef) and n.name == '__init__'), None)
+    n_args = len(init.args.args) if init else -1
+    if n_args != 1:
+        sys.exit(f"ConditionalDenoiser.__init__ in {SRC} now takes {n_args} positional "
+                 f"argument(s), not just self. It used to read its config from module "
+                 f"scope, which is why MIDDLE constructs it with no arguments. Update "
+                 f"that call before regenerating, or the cell will raise TypeError in "
+                 f"Colab.")
 
     def span(node):
         """Source for a def, including the comment block immediately above it."""
@@ -86,6 +136,11 @@ def main():
                  f'  {e.msg} at generated line {e.lineno}\n'
                  f'  {bad.strip()[:100]}\n'
                  f'  Check the escaping in this script\'s template strings.')
+
+    mismatches = check_calls(out)
+    if mismatches:
+        sys.exit(f'Refusing to write {OUT}: calls do not match local signatures.\n'
+                 + '\n'.join(mismatches))
 
     io.open(OUT, 'w', encoding='utf-8').write(out)
 
@@ -267,36 +322,6 @@ print(f'  Sampling      : {FINAL_STEPS} DDIM steps x {FINAL_SAMPLES} averaged sa
 '''
 
 MIDDLE = '''
-betas = cosine_beta_schedule(T_DIFF).to(DEVICE)
-alphas = 1.0 - betas
-alphas_cumprod = torch.cumprod(alphas, dim=0)
-sqrt_ac = torch.sqrt(alphas_cumprod)
-sqrt_1m_ac = torch.sqrt(1.0 - alphas_cumprod)
-
-# ── Model, from the checkpoint's EMA weights ─────────────────────────
-# The EMA copy is what every reported Module 5 number was measured with; the raw weights
-# are the noisier last-step snapshot.
-ema_model = ConditionalDenoiser(WINDOW_SIZE, LATENT_DIM, HIDDEN_DIM, N_HEADS,
-                                N_TF_LAYERS, DROPOUT, MAX_PRED_STEP).to(DEVICE)
-_sd = ck.get('ema') or ck.get('model')
-assert _sd is not None, "Checkpoint has neither an 'ema' nor a 'model' state_dict."
-if ck.get('ema') is None:
-    print('  ⚠️  No EMA weights in this checkpoint; scoring the raw weights instead.')
-ema_model.load_state_dict(_sd)       # strict: a silent partial load would be worse
-ema_model.eval()
-_n_params = sum(p.numel() for p in ema_model.parameters())
-print(f'  Model         : {_n_params:,} parameters loaded, eval mode')
-
-# History, for QT1. Stored in the checkpoint, so it survives any disconnect.
-train_losses = ck.get('train_losses') or []
-val_cds      = ck.get('val_cds') or []
-val_epochs   = ck.get('val_epochs') or []
-best_cd      = float(ck.get('best_cd', float('inf')))
-
-# Full set always: this cell exists to produce the reportable number.
-_qt_idx = None
-val_subset_idx = representative_subset_indices(M_va, min(M_va, 512))
-
 # ── Is this the dataset the checkpoint was trained on? ──────────────
 # The window-count check above catches two Module 4 runs disagreeing with each other.
 # This catches something subtler and worse: arrays that are internally consistent but
@@ -321,6 +346,40 @@ elif _fp_now != _fp_ckpt:
     print(_msg + '\\n    REQUIRE_MATCHING_DATA=False, continuing anyway.')
 else:
     print(f'  Data check    : fingerprint matches the checkpoint ({_fp_now[:16]}...)')
+
+betas = cosine_beta_schedule(T_DIFF).to(DEVICE)
+alphas = 1.0 - betas
+alphas_cumprod = torch.cumprod(alphas, dim=0)
+sqrt_ac = torch.sqrt(alphas_cumprod)
+sqrt_1m_ac = torch.sqrt(1.0 - alphas_cumprod)
+
+# ── Model, from the checkpoint's EMA weights ─────────────────────────
+# The EMA copy is what every reported Module 5 number was measured with; the raw weights
+# are the noisier last-step snapshot.
+# Module 5's ConditionalDenoiser takes no arguments: it reads WINDOW_SIZE, LATENT_DIM,
+# HIDDEN_DIM, N_HEADS, N_TF_LAYERS, DROPOUT, MAX_PRED_STEP and CTX_SCALE from module
+# scope. The preamble above set every one of them from the checkpoint, which is why the
+# model it builds is the model the weights came from.
+ema_model = ConditionalDenoiser().to(DEVICE)
+_sd = ck.get('ema') or ck.get('model')
+assert _sd is not None, "Checkpoint has neither an 'ema' nor a 'model' state_dict."
+if ck.get('ema') is None:
+    print('  ⚠️  No EMA weights in this checkpoint; scoring the raw weights instead.')
+ema_model.load_state_dict(_sd)       # strict: a silent partial load would be worse
+ema_model.eval()
+_n_params = sum(p.numel() for p in ema_model.parameters())
+print(f'  Model         : {_n_params:,} parameters loaded, eval mode')
+
+# History, for QT1. Stored in the checkpoint, so it survives any disconnect.
+train_losses = ck.get('train_losses') or []
+val_cds      = ck.get('val_cds') or []
+val_epochs   = ck.get('val_epochs') or []
+best_cd      = float(ck.get('best_cd', float('inf')))
+
+# Full set always: this cell exists to produce the reportable number.
+_qt_idx = None
+val_subset_idx = representative_subset_indices(M_va, min(M_va, 512))
+
 
 print('\\n' + '=' * 70)
 print('  QUALITY TESTS')

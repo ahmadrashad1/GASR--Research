@@ -526,36 +526,6 @@ def _compute_data_fingerprint():
     return hashlib.sha256('|'.join(parts).encode()).hexdigest()
 
 
-betas = cosine_beta_schedule(T_DIFF).to(DEVICE)
-alphas = 1.0 - betas
-alphas_cumprod = torch.cumprod(alphas, dim=0)
-sqrt_ac = torch.sqrt(alphas_cumprod)
-sqrt_1m_ac = torch.sqrt(1.0 - alphas_cumprod)
-
-# ── Model, from the checkpoint's EMA weights ─────────────────────────
-# The EMA copy is what every reported Module 5 number was measured with; the raw weights
-# are the noisier last-step snapshot.
-ema_model = ConditionalDenoiser(WINDOW_SIZE, LATENT_DIM, HIDDEN_DIM, N_HEADS,
-                                N_TF_LAYERS, DROPOUT, MAX_PRED_STEP).to(DEVICE)
-_sd = ck.get('ema') or ck.get('model')
-assert _sd is not None, "Checkpoint has neither an 'ema' nor a 'model' state_dict."
-if ck.get('ema') is None:
-    print('  ⚠️  No EMA weights in this checkpoint; scoring the raw weights instead.')
-ema_model.load_state_dict(_sd)       # strict: a silent partial load would be worse
-ema_model.eval()
-_n_params = sum(p.numel() for p in ema_model.parameters())
-print(f'  Model         : {_n_params:,} parameters loaded, eval mode')
-
-# History, for QT1. Stored in the checkpoint, so it survives any disconnect.
-train_losses = ck.get('train_losses') or []
-val_cds      = ck.get('val_cds') or []
-val_epochs   = ck.get('val_epochs') or []
-best_cd      = float(ck.get('best_cd', float('inf')))
-
-# Full set always: this cell exists to produce the reportable number.
-_qt_idx = None
-val_subset_idx = representative_subset_indices(M_va, min(M_va, 512))
-
 # ── Is this the dataset the checkpoint was trained on? ──────────────
 # The window-count check above catches two Module 4 runs disagreeing with each other.
 # This catches something subtler and worse: arrays that are internally consistent but
@@ -580,6 +550,40 @@ elif _fp_now != _fp_ckpt:
     print(_msg + '\n    REQUIRE_MATCHING_DATA=False, continuing anyway.')
 else:
     print(f'  Data check    : fingerprint matches the checkpoint ({_fp_now[:16]}...)')
+
+betas = cosine_beta_schedule(T_DIFF).to(DEVICE)
+alphas = 1.0 - betas
+alphas_cumprod = torch.cumprod(alphas, dim=0)
+sqrt_ac = torch.sqrt(alphas_cumprod)
+sqrt_1m_ac = torch.sqrt(1.0 - alphas_cumprod)
+
+# ── Model, from the checkpoint's EMA weights ─────────────────────────
+# The EMA copy is what every reported Module 5 number was measured with; the raw weights
+# are the noisier last-step snapshot.
+# Module 5's ConditionalDenoiser takes no arguments: it reads WINDOW_SIZE, LATENT_DIM,
+# HIDDEN_DIM, N_HEADS, N_TF_LAYERS, DROPOUT, MAX_PRED_STEP and CTX_SCALE from module
+# scope. The preamble above set every one of them from the checkpoint, which is why the
+# model it builds is the model the weights came from.
+ema_model = ConditionalDenoiser().to(DEVICE)
+_sd = ck.get('ema') or ck.get('model')
+assert _sd is not None, "Checkpoint has neither an 'ema' nor a 'model' state_dict."
+if ck.get('ema') is None:
+    print('  ⚠️  No EMA weights in this checkpoint; scoring the raw weights instead.')
+ema_model.load_state_dict(_sd)       # strict: a silent partial load would be worse
+ema_model.eval()
+_n_params = sum(p.numel() for p in ema_model.parameters())
+print(f'  Model         : {_n_params:,} parameters loaded, eval mode')
+
+# History, for QT1. Stored in the checkpoint, so it survives any disconnect.
+train_losses = ck.get('train_losses') or []
+val_cds      = ck.get('val_cds') or []
+val_epochs   = ck.get('val_epochs') or []
+best_cd      = float(ck.get('best_cd', float('inf')))
+
+# Full set always: this cell exists to produce the reportable number.
+_qt_idx = None
+val_subset_idx = representative_subset_indices(M_va, min(M_va, 512))
+
 
 print('\n' + '=' * 70)
 print('  QUALITY TESTS')
