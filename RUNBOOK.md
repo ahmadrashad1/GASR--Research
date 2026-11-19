@@ -216,16 +216,38 @@ spare day.
 
 ## 5. Module 9 and the viewer — ~15 min
 
-Cell 47, immediately after Module 6 **in the same runtime** — it reuses Module 6's
-objects rather than re-deriving the prediction path.
+Cell **48**, immediately after Module 6 **in the same runtime** — it reuses Module 6's
+`videos`, `predict_direct`, `base_pred`, `BUNDLE` and fitted `alpha` rather than
+re-deriving the prediction path, so the demonstrator shows the predictor the paper
+reports and not a second implementation of it.
+
+Those objects live in memory, not on Drive. **A runtime disconnect loses them**, and
+Module 6 then has to be re-run before this cell will do anything. Run on its own it now
+stops immediately with `MODULE 9 NEEDS MODULE 6 IN THE SAME RUNTIME` and lists what is
+absent, instead of dying on a bare `NameError` a hundred lines in.
+
+Run order inside the runtime: Module 6 → cell 48. If Module 6 stopped before its
+timeline section, the export still succeeds; it just writes `timing_ok: false` and the
+viewer states the horizon in frames only, which is the exact behaviour the design asks
+for.
+
+It writes three things into `{DRIVE_BASE}/module9_demo`:
+
+| Output | For |
+|---|---|
+| `demo_data.json` | `demo/index.html`, which is **served** and fetches it |
+| `demo_data.js` | `demo/clinical/index.html`, which opens over `file://` — the only one that works off a USB stick |
+| `frames/*.jpg` | the real endoscopic frames, referenced by `<img src>` |
 
 ```bash
+# served research viewer
 # copy module9_demo/demo_data.json from Drive into demo/
 python3 -m http.server -d demo 8000
 ```
 
 The header badge must read **measured**. If it reads **synthetic**, the JSON is not
-beside `index.html` or the page was opened over `file://`.
+beside `index.html` or the page was opened over `file://` — which is what
+`demo_data.js` and `demo/clinical/` exist for.
 
 ---
 
