@@ -245,4 +245,5 @@ def main(files):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:] or ['module7_baselines.py', 'module8_hpo.py']))
+    sys.exit(main(sys.argv[1:] or ['module7_baselines.py', 'module8_hpo.py',
+                                   'module5_quality_tests.py']))
