@@ -20,7 +20,7 @@
 # FINAL_STEPS DDIM steps for every validation window.
 # ════════════════════════════════════════════════════════════════════
 import torch, torch.nn as nn, torch.nn.functional as F
-import numpy as np, os, math, json, time
+import numpy as np, os, math, json, time, hashlib
 from tqdm import tqdm
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -44,6 +44,10 @@ CKPT_LATEST  = f'{MODULE5_DIR}/diffusion_ckpt.pth'
 # wherever training stopped. They differ whenever the best validation score was not on
 # the final epoch.
 WHICH        = 'best'              # 'best' | 'latest'
+# The checkpoint fingerprints the Module 4 arrays it was trained against. Set this False
+# only if you deliberately want to score the model on a DIFFERENT dataset, and then do
+# not quote the result as this model's accuracy.
+REQUIRE_MATCHING_DATA = True
 
 FINAL_STEPS   = 20                 # DDIM steps for QT2 -- matches Module 5's final QT2
 FINAL_SAMPLES = 4                  # trajectories averaged per window
@@ -146,6 +150,11 @@ if _W_DATA > WINDOW_SIZE:
 
 assert val_inp.shape[2] == N_ANCHOR, (
     f'Module 4 emitted {val_inp.shape[2]} anchors but the checkpoint expects {N_ANCHOR}.')
+
+# The deltas, for the dataset fingerprint below. Shape is (M, N_ANCHOR, 3) -- not
+# windowed -- so this is tens of megabytes, not the gigabyte the context arrays are.
+train_delta = np.load(f'{COMBINED_DIR}/train_deltas.npy').astype(np.float32)
+val_delta   = np.load(f'{COMBINED_DIR}/val_deltas.npy').astype(np.float32)
 
 M_va = len(val_inp)
 val_inp_t   = torch.from_numpy(val_inp).to(DEVICE)
@@ -506,6 +515,16 @@ def evaluate_cd(m, indices=None, steps=FINAL_STEPS, n_samples=FINAL_SAMPLES,
                                for k, d in sorted(per_h.items())}
     return out
 
+def _compute_data_fingerprint():
+    parts = [
+        str(train_delta.shape), str(val_delta.shape),
+        f'{float(train_delta.mean()):.8f}', f'{float(train_delta.std()):.8f}',
+        f'{float(val_delta.mean()):.8f}', f'{float(val_delta.std()):.8f}',
+    ]
+    sample = train_delta.reshape(-1)[::997][:2000]
+    parts.append(hashlib.sha256(sample.tobytes()).hexdigest())
+    return hashlib.sha256('|'.join(parts).encode()).hexdigest()
+
 
 betas = cosine_beta_schedule(T_DIFF).to(DEVICE)
 alphas = 1.0 - betas
@@ -536,6 +555,31 @@ best_cd      = float(ck.get('best_cd', float('inf')))
 # Full set always: this cell exists to produce the reportable number.
 _qt_idx = None
 val_subset_idx = representative_subset_indices(M_va, min(M_va, 512))
+
+# ── Is this the dataset the checkpoint was trained on? ──────────────
+# The window-count check above catches two Module 4 runs disagreeing with each other.
+# This catches something subtler and worse: arrays that are internally consistent but
+# are not the ones these weights ever saw. Scoring a checkpoint against a different
+# dataset produces a number for a pairing that never existed, and nothing about it
+# looks wrong.
+_fp_now  = _compute_data_fingerprint()
+_fp_ckpt = ck.get('data_fingerprint')
+if _fp_ckpt is None:
+    print('  ⚠️  This checkpoint carries no data fingerprint, so whether it was trained '
+          'on\n      the arrays now in module4_combined cannot be verified.')
+elif _fp_now != _fp_ckpt:
+    _msg = (f'\n  ✗ DATASET MISMATCH\n'
+            f'      checkpoint was trained against : {_fp_ckpt[:16]}...\n'
+            f'      module4_combined now holds     : {_fp_now[:16]}...\n'
+            f'    Module 4 has been re-run since this checkpoint was saved, so these are\n'
+            f'    not the arrays these weights were trained on. Any number produced here\n'
+            f'    would describe a model/dataset pairing that never existed.\n'
+            f'    Nothing has been modified -- this cell is read-only.')
+    if REQUIRE_MATCHING_DATA:
+        raise SystemExit(_msg)
+    print(_msg + '\n    REQUIRE_MATCHING_DATA=False, continuing anyway.')
+else:
+    print(f'  Data check    : fingerprint matches the checkpoint ({_fp_now[:16]}...)')
 
 print('\n' + '=' * 70)
 print('  QUALITY TESTS')

@@ -28,7 +28,8 @@ OUT = 'module5_quality_tests.py'
 DEFS = ['representative_subset_indices', 'GeomMLP', 'sinusoidal_embedding',
         'ConditionalDenoiser', 'cosine_beta_schedule', 'pred_x0_from_v',
         'pred_eps_from_v', 'ddim_sample', 'predict_mean_oneshot', 'chamfer_distance',
-        'to_physical', 'const_velocity_pred', 'base_pred', 'evaluate_cd']
+        'to_physical', 'const_velocity_pred', 'base_pred', 'evaluate_cd',
+        '_compute_data_fingerprint']
 
 # The QT block: QT1's opener through the final verdict print.
 QT_FIRST = 'if len(train_losses) >= 10:'
@@ -72,6 +73,20 @@ def main():
     qt_block = '\n'.join(lines[qt_start:qt_end + 1])
 
     out = PREAMBLE + '\n\n'.join(blocks) + '\n\n' + MIDDLE + qt_block + '\n' + EPILOGUE
+
+    # Never write a file that will not parse. The templates above are triple-quoted
+    # strings whose contents pass through a second round of literal parsing, so a '\n'
+    # that should have been '\\n' produces a raw newline inside a quoted string and the
+    # generated cell dies on a SyntaxError in Colab, far from the cause.
+    try:
+        compile(out, OUT, 'exec')
+    except SyntaxError as e:
+        bad = out.splitlines()[(e.lineno or 1) - 1] if e.lineno else ''
+        sys.exit(f'Refusing to write {OUT}: generated source does not parse.\n'
+                 f'  {e.msg} at generated line {e.lineno}\n'
+                 f'  {bad.strip()[:100]}\n'
+                 f'  Check the escaping in this script\'s template strings.')
+
     io.open(OUT, 'w', encoding='utf-8').write(out)
 
     n_def_lines = sum(b.count('\n') + 1 for b in blocks)
@@ -104,7 +119,7 @@ PREAMBLE = '''# ═════════════════════�
 # FINAL_STEPS DDIM steps for every validation window.
 # ════════════════════════════════════════════════════════════════════
 import torch, torch.nn as nn, torch.nn.functional as F
-import numpy as np, os, math, json, time
+import numpy as np, os, math, json, time, hashlib
 from tqdm import tqdm
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -128,6 +143,10 @@ CKPT_LATEST  = f'{MODULE5_DIR}/diffusion_ckpt.pth'
 # wherever training stopped. They differ whenever the best validation score was not on
 # the final epoch.
 WHICH        = 'best'              # 'best' | 'latest'
+# The checkpoint fingerprints the Module 4 arrays it was trained against. Set this False
+# only if you deliberately want to score the model on a DIFFERENT dataset, and then do
+# not quote the result as this model's accuracy.
+REQUIRE_MATCHING_DATA = True
 
 FINAL_STEPS   = 20                 # DDIM steps for QT2 -- matches Module 5's final QT2
 FINAL_SAMPLES = 4                  # trajectories averaged per window
@@ -231,6 +250,11 @@ if _W_DATA > WINDOW_SIZE:
 assert val_inp.shape[2] == N_ANCHOR, (
     f'Module 4 emitted {val_inp.shape[2]} anchors but the checkpoint expects {N_ANCHOR}.')
 
+# The deltas, for the dataset fingerprint below. Shape is (M, N_ANCHOR, 3) -- not
+# windowed -- so this is tens of megabytes, not the gigabyte the context arrays are.
+train_delta = np.load(f'{COMBINED_DIR}/train_deltas.npy').astype(np.float32)
+val_delta   = np.load(f'{COMBINED_DIR}/val_deltas.npy').astype(np.float32)
+
 M_va = len(val_inp)
 val_inp_t   = torch.from_numpy(val_inp).to(DEVICE)
 val_tgt_t   = torch.from_numpy(val_tgt).to(DEVICE)
@@ -272,6 +296,31 @@ best_cd      = float(ck.get('best_cd', float('inf')))
 # Full set always: this cell exists to produce the reportable number.
 _qt_idx = None
 val_subset_idx = representative_subset_indices(M_va, min(M_va, 512))
+
+# ── Is this the dataset the checkpoint was trained on? ──────────────
+# The window-count check above catches two Module 4 runs disagreeing with each other.
+# This catches something subtler and worse: arrays that are internally consistent but
+# are not the ones these weights ever saw. Scoring a checkpoint against a different
+# dataset produces a number for a pairing that never existed, and nothing about it
+# looks wrong.
+_fp_now  = _compute_data_fingerprint()
+_fp_ckpt = ck.get('data_fingerprint')
+if _fp_ckpt is None:
+    print('  ⚠️  This checkpoint carries no data fingerprint, so whether it was trained '
+          'on\\n      the arrays now in module4_combined cannot be verified.')
+elif _fp_now != _fp_ckpt:
+    _msg = (f'\\n  ✗ DATASET MISMATCH\\n'
+            f'      checkpoint was trained against : {_fp_ckpt[:16]}...\\n'
+            f'      module4_combined now holds     : {_fp_now[:16]}...\\n'
+            f'    Module 4 has been re-run since this checkpoint was saved, so these are\\n'
+            f'    not the arrays these weights were trained on. Any number produced here\\n'
+            f'    would describe a model/dataset pairing that never existed.\\n'
+            f'    Nothing has been modified -- this cell is read-only.')
+    if REQUIRE_MATCHING_DATA:
+        raise SystemExit(_msg)
+    print(_msg + '\\n    REQUIRE_MATCHING_DATA=False, continuing anyway.')
+else:
+    print(f'  Data check    : fingerprint matches the checkpoint ({_fp_now[:16]}...)')
 
 print('\\n' + '=' * 70)
 print('  QUALITY TESTS')
