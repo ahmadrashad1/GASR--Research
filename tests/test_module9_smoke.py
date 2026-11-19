@@ -94,7 +94,8 @@ class TestModule9RunsEndToEnd(unittest.TestCase):
     def test_every_field_the_design_requires_is_present(self):
         for key in ('video', 'n_points', 'n_frames', 'horizons', 'window', 'centre',
                     'radius', 'span', 'target_mode', 'checkpoint_epoch', 'mean_error',
-                    'motion', 'timing', 'frame_files', 'frames', 'alpha', 'calibrated'):
+                    'motion', 'timing', 'frame_files', 'frames', 'alpha', 'calibrated',
+                    'degenerate_horizons'):
             self.assertIn(key, self.payload)
 
     def test_span_is_twice_the_radius(self):
@@ -150,6 +151,11 @@ class TestModule9RunsEndToEnd(unittest.TestCase):
 
     def test_timing_degrades_to_frames_only_when_module_6_never_recovered_it(self):
         self.assertEqual(self.payload['timing'], {'timing_ok': False})
+
+    def test_an_uncalibrated_run_is_not_reported_as_degenerate(self):
+        """alpha = 1.0 means no calibration, not a worthless model. Only a fitted
+        alpha of exactly 0 collapses the prediction onto the baseline."""
+        self.assertEqual(self.payload['degenerate_horizons'], [])
 
     def test_uncalibrated_is_reported_as_such(self):
         self.assertFalse(self.payload['calibrated'])

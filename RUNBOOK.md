@@ -221,10 +221,46 @@ Cell **48**, immediately after Module 6 **in the same runtime** — it reuses Mo
 re-deriving the prediction path, so the demonstrator shows the predictor the paper
 reports and not a second implementation of it.
 
-Those objects live in memory, not on Drive. **A runtime disconnect loses them**, and
-Module 6 then has to be re-run before this cell will do anything. Run on its own it now
-stops immediately with `MODULE 9 NEEDS MODULE 6 IN THE SAME RUNTIME` and lists what is
-absent, instead of dying on a bare `NameError` a hundred lines in.
+Those objects live in memory, not on Drive. **A runtime disconnect loses them.** Run on
+its own, cell 48 stops immediately with `MODULE 9 NEEDS MODULE 6 IN THE SAME RUNTIME`
+and lists what is absent, instead of dying on a bare `NameError` a hundred lines in.
+
+### If the runtime disconnected — use cell 50 instead
+
+Cell **50** is the standalone export. It needs nothing but Drive, and it costs minutes
+rather than the hour Module 6 costs:
+
+| It reads from Drive | For |
+|---|---|
+| `module5/diffusion_ckpt_best.pth` | the weights, and the arch/config that built them |
+| `module4_combined/module4_metadata.json` | per-video `smooth_window`, `disp_norm`, `split_frame` |
+| `<workspace>/exports/gaussian_trajectory.npy` | the raw per-frame Gaussian positions |
+| `<workspace>/checkpoints/4dgs_v4.pth` | opacity, for the anchor gate |
+
+It replays Module 4's reconstruction rather than approximating it: anchor selection is
+seeded with `default_rng(M4_SEED + video_id)` and the smoothing window is **read** from
+Module 4's metadata rather than re-selected. It also re-fits the magnitude calibration
+on training origins, so the predictor it exports is the one the write-up describes.
+
+It is generated — `python3 tools/make_demo_cell.py` — lifting the model, sampler,
+reconstruction and the export itself verbatim out of `module6_prediction.py` and
+`module9_demo_export.py`. Do not edit it; edit those two and regenerate.
+
+What cell 50 cannot give you is **frame timing**: Module 6 recovers which raw video
+frame each trajectory frame came from, well past the point cell 50 stops. The payload
+then carries `timing_ok: false` and the viewer states the horizon in frames only —
+which is exact, and what the design asks for regardless.
+
+It writes no checkpoint. The generator refuses to emit it if a `torch.save`, `os.rename`
+or `np.save` ever appears in the lifted code.
+
+### Read `degenerate_horizons` before trusting a panel
+
+If the calibration fit clips a horizon's alpha to **0**, the model's contribution was
+measured as worthless there: `pred{k}` is then *exactly* `cv{k}` and `sigma{k}` is
+identically zero. Both cells record those horizons in `degenerate_horizons` and print a
+`WARNING`. A viewer that drew a zero-radius uncertainty cloud and called it the model's
+would be the most misleading thing this payload could carry — check the field.
 
 Run order inside the runtime: Module 6 → cell 48. If Module 6 stopped before its
 timeline section, the export still succeeds; it just writes `timing_ok: false` and the

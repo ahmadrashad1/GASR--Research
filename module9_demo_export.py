@@ -286,6 +286,12 @@ def export_demo(vid, name):
         'motion': motion_by_horizon(frames, DEMO_HORIZONS),
         'calibrated': _cal_on,
         'alpha': {str(k): DEMO_ALPHA[k] for k in DEMO_HORIZONS},
+        # Horizons where the fitted alpha is 0: the fit found the model's contribution
+        # worth nothing there, so pred{k} is EXACTLY cv{k} and sigma{k} is identically
+        # zero. Stated rather than left to be inferred, because the alternative is a
+        # viewer drawing a zero-radius uncertainty cloud around a prediction it presents
+        # as the model's, which is the most misleading thing this payload could carry.
+        'degenerate_horizons': [str(k) for k in DEMO_HORIZONS if DEMO_ALPHA[k] == 0.0],
         'timing': _timing_for(vid['workspace'], idx),
         'frame_files': {str(i): p for i, p in frame_files.items()},
         'mean_error': err,
@@ -312,6 +318,12 @@ def export_demo(vid, name):
         skill = f'{100.0 * e["ours"] / mo:.1f}% of motion' if mo > 0 else 'motion ~ 0'
         print(f'    k={k}  ours {e["ours"]:.5f}   const-vel {e["cv"]:.5f}   '
               f'no-motion {e["still"]:.5f}   -> lowest: {best}   ({skill})')
+    if out['degenerate_horizons']:
+        ks = ', '.join(f'k={k}' for k in out['degenerate_horizons'])
+        print(f'    WARNING  alpha = 0 at {ks}. The calibration fit found the model\'s'
+              f' contribution\n             worthless there, so the prediction at that'
+              f' horizon IS constant velocity\n             and its spread is identically'
+              f' zero. Recorded in degenerate_horizons.')
     return out
 
 
