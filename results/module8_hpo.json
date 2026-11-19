@@ -1,0 +1,213 @@
+{
+  "_README": "Studies A and B of Module 8, recovered by transcription from the Colab console on 19 November 2026. Study C OOMed before the single json.dump at the end of the cell could run, so these 14.3 h of results existed only as printed text. Copy this file to {DRIVE_BASE}/module8/module8_hpo.json; Module 8 reloads it at startup and will write Study C in beside it. Values are exactly as printed, to the 6 decimal places shown. \"parameters\" is null for Study B because the console did not print it.",
+  "transcribed_from_console": true,
+  "config": {
+    "backbone_epochs": 40,
+    "seed": null,
+    "a_subset": 480,
+    "a_steps": [
+      2,
+      5,
+      10,
+      20,
+      50
+    ],
+    "a_samples": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "b_windows": [
+      4,
+      8,
+      16,
+      32
+    ],
+    "val_windows": 1298,
+    "checkpoint_epoch": 100,
+    "train_windows": 5233,
+    "points": 512,
+    "dataset_window": 32
+  },
+  "results": {
+    "A_inference": {
+      "5x8": {
+        "steps": 5,
+        "samples": 8,
+        "mpe": 0.007702,
+        "forward_passes": 40,
+        "seconds": 901.0
+      },
+      "5x4": {
+        "steps": 5,
+        "samples": 4,
+        "mpe": 0.007725,
+        "forward_passes": 20,
+        "seconds": 450.8
+      },
+      "2x8": {
+        "steps": 2,
+        "samples": 8,
+        "mpe": 0.007763,
+        "forward_passes": 16,
+        "seconds": 360.6
+      },
+      "10x8": {
+        "steps": 10,
+        "samples": 8,
+        "mpe": 0.007775,
+        "forward_passes": 80,
+        "seconds": 1802.6
+      },
+      "10x4": {
+        "steps": 10,
+        "samples": 4,
+        "mpe": 0.007779,
+        "forward_passes": 40,
+        "seconds": 900.7
+      },
+      "5x2": {
+        "steps": 5,
+        "samples": 2,
+        "mpe": 0.007781,
+        "forward_passes": 10,
+        "seconds": 225.3
+      },
+      "2x4": {
+        "steps": 2,
+        "samples": 4,
+        "mpe": 0.007826,
+        "forward_passes": 8,
+        "seconds": 180.3
+      },
+      "2x2": {
+        "steps": 2,
+        "samples": 2,
+        "mpe": 0.00786,
+        "forward_passes": 4,
+        "seconds": 88.5
+      },
+      "2x1": {
+        "steps": 2,
+        "samples": 1,
+        "mpe": 0.007889,
+        "forward_passes": 2,
+        "seconds": 43.1
+      },
+      "5x1": {
+        "steps": 5,
+        "samples": 1,
+        "mpe": 0.007891,
+        "forward_passes": 5,
+        "seconds": 112.7
+      },
+      "10x2": {
+        "steps": 10,
+        "samples": 2,
+        "mpe": 0.007911,
+        "forward_passes": 20,
+        "seconds": 450.2
+      },
+      "20x8": {
+        "steps": 20,
+        "samples": 8,
+        "mpe": 0.007922,
+        "forward_passes": 160,
+        "seconds": 3601.1
+      },
+      "10x1": {
+        "steps": 10,
+        "samples": 1,
+        "mpe": 0.008053,
+        "forward_passes": 10,
+        "seconds": 226.0
+      },
+      "20x2": {
+        "steps": 20,
+        "samples": 2,
+        "mpe": 0.008078,
+        "forward_passes": 40,
+        "seconds": 900.9
+      },
+      "20x4": {
+        "steps": 20,
+        "samples": 4,
+        "mpe": 0.008093,
+        "forward_passes": 80,
+        "seconds": 1801.2
+      },
+      "50x8": {
+        "steps": 50,
+        "samples": 8,
+        "mpe": 0.008097,
+        "forward_passes": 400,
+        "seconds": 9006.4
+      },
+      "50x2": {
+        "steps": 50,
+        "samples": 2,
+        "mpe": 0.008108,
+        "forward_passes": 100,
+        "seconds": 2251.7
+      },
+      "50x4": {
+        "steps": 50,
+        "samples": 4,
+        "mpe": 0.008135,
+        "forward_passes": 200,
+        "seconds": 4502.9
+      },
+      "50x1": {
+        "steps": 50,
+        "samples": 1,
+        "mpe": 0.008341,
+        "forward_passes": 50,
+        "seconds": 1124.7
+      },
+      "20x1": {
+        "steps": 20,
+        "samples": 1,
+        "mpe": 0.008373,
+        "forward_passes": 20,
+        "seconds": 451.9
+      }
+    },
+    "A_best": {
+      "steps": 5,
+      "samples": 8,
+      "mpe": 0.007702,
+      "forward_passes": 40,
+      "seconds": 901.0
+    },
+    "A_knee": {
+      "steps": 2,
+      "samples": 8,
+      "mpe": 0.007763,
+      "forward_passes": 16,
+      "seconds": 360.6
+    },
+    "B_context": {
+      "4": {
+        "mpe": 0.008643,
+        "seconds": 2156.0,
+        "parameters": null
+      },
+      "8": {
+        "mpe": 0.008204,
+        "seconds": 3389.0,
+        "parameters": null
+      },
+      "16": {
+        "mpe": 0.008632,
+        "seconds": 5780.0,
+        "parameters": null
+      },
+      "32": {
+        "mpe": 0.009442,
+        "seconds": 10242.0,
+        "parameters": null
+      }
+    }
+  }
+}

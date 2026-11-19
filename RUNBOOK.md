@@ -154,22 +154,53 @@ which is cheap and tells you which of the remaining variables is responsible.
 
 ---
 
-## 4. Module 8 — ablations — ~2 h
+## 4. Module 8 — ablations
 
-Cell 46, `RUN_A=True, RUN_B=True, RUN_C=True, RUN_D=True`.
+**Studies A and B are done** (19 November 2026, 14.3 h). Their results were recovered by
+transcription from the console, because Study C hit an out-of-memory error before the
+cell's single `json.dump` could run. Before re-running the cell:
 
-Fills four tables the paper currently prints as `[pending]`, and answers three
-questions you would otherwise guess at:
+```bash
+# copy results/module8_hpo.json from this repo to Drive, once
+cp results/module8_hpo.json "$DRIVE_BASE/module8/module8_hpo.json"
+```
 
-- **Study A** — whether averaging 4 sampled trajectories is itself shrinking the
-  predicted magnitude. If error falls as samples fall toward 1, it is.
-- **Study B** — whether the window should have been 4, 8, 16 or 32. This is the
-  context-length ablation, run on a cheap backbone instead of a 40-hour retrain.
-- **Study D** — `cv_residual` against the raw-displacement target, at matched budget.
+Module 8 now reloads that file at startup and writes each study back **as it finishes**, so
+a crash costs one study rather than all of them. `RUN_A` and `RUN_B` are therefore `False`
+in the committed cell; the loaded results still appear in the output and on the figure.
 
-If Study B says 16 or 32 is clearly better, that is the one justified reason to change
-`WINDOW_SIZE` in Module 5 and retrain. Raise `MICRO_BATCH`'s divisor with it so that
-`MICRO_BATCH × W` stays at 64.
+### What A and B found
+
+| Study | Result |
+|---|---|
+| **A** — sampling cost vs accuracy | Best **0.007702 MPE** at 5 DDIM steps × 8 samples. The knee is **2×8 at 16 forward passes**, 2.5× cheaper for 0.8% more error. More steps is *worse*: every 50-step cell is beaten by every 2-step cell. |
+| **B** — context length | **W=8 is best (0.008204). W=32 is worst (0.009442)** — W=4 → W=32 is **9.2% worse**, not better. |
+
+Against the bars in step 3, over Study A's 20 cells: **20/20 beat the static baseline**,
+**12/20 beat constant velocity** (including the best and the knee), **0/20 beat the
+deterministic Transformer**.
+
+So the fix worked and the model is a real predictor — but on this evidence it does not lead
+the table. Report that.
+
+### Study B contradicts the deployed configuration
+
+The trained model is W=32, and the cheap backbone says W=8 would have been better. Two
+honest caveats: the backbone is not the diffusion model, and it does not use the relative
+context encoding that made W=32 trainable at all. It is evidence, not proof. **Do not
+retrain on it** — there is no time, and Study A already shows the deployed checkpoint
+beating constant velocity. Report it as the ablation result it is.
+
+### Study C — the one still to run
+
+Cell 46 with `RUN_A=False, RUN_B=False, RUN_C=True`. It trains 16 backbones. At the
+deployed W=32 that would be ~45 h, so it runs at `C_WINDOW = 8` over `C_EPOCHS = 12`
+instead — **about 1.7 h**, printed as a budget from Study B's own measured timings before
+anything starts. Study C ranks optimisation factors against each other; its absolute MPE is
+not comparable with Study A or Module 7, and the output JSON says so.
+
+`RUN_D` retrains the diffusion model once per ablation. Leave it `False` unless there is a
+spare day.
 
 ---
 

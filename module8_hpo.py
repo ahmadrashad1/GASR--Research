@@ -58,7 +58,11 @@ CKPT_BEST    = f'{MODULE5_DIR}/diffusion_ckpt_best.pth'
 CKPT_LATEST  = f'{MODULE5_DIR}/diffusion_ckpt.pth'
 os.makedirs(MODULE8_DIR, exist_ok=True)
 
-RUN_A, RUN_B, RUN_C = True, True, True
+# Studies A and B completed on 19 November 2026 and their results are in
+# module8_hpo.json on Drive, which this cell reloads at startup -- so turning them off
+# here does NOT drop them from the output or the figure. Only re-enable one to re-measure
+# it. Study A cost 8.3 h and Study B 6.0 h; neither needs repeating.
+RUN_A, RUN_B, RUN_C = False, False, True
 RUN_D = False            # opt-in: retrains the diffusion model once per ablation. The
                           # budget is printed before anything starts -- read it first.
 
@@ -80,6 +84,19 @@ BACKBONE_BATCH  = 32     # reference batch AT W=4. Activation memory scales with
                           # narrow configs fast rather than crippling them to suit the
                           # widest one.
 BACKBONE_LR     = 1e-3
+# ── Study C: budget ──────────────────────────────────────────────────
+# Study C trains 16 backbones. At the full 32-frame window that is 16 x the 10,242 s
+# Study B measured there -- about 45 h, which is not a study, it is a weekend. It runs
+# at a narrower window and a shorter schedule instead, because Study C measures the
+# RELATIVE sensitivity to optimiser, learning rate, schedule, decay, batch, width and
+# depth, and that ordering is what transfers -- not the absolute MPE of each cell.
+C_WINDOW = 8             # Study B's best-performing window (MPE 0.008204), so this is
+                          # the most defensible operating point to probe rather than an
+                          # arbitrary compromise. ~3x cheaper per run than W=32.
+C_EPOCHS = 12            # against BACKBONE_EPOCHS=40. Enough to order the factors. The
+                          # budget printed before the study starts is derived from Study
+                          # B's own measured seconds at this window, not an estimate.
+
 B_WINDOWS = [4, 8, 16, 32]   # truncations of the 32-frame context. This is the cheap
                               # test of whether the longer window was worth rebuilding
                               # Module 4 for: minutes per config on the small backbone,
@@ -371,7 +388,39 @@ def ddim(model, diff, ctx, k, steps, n_samples=1, eta=0.0):
     return x.view(B, n_samples, N, 3).mean(1) if n_samples > 1 else x
 
 
+# Studies are expensive and they crash: Study C hit an OOM on 19 November after Studies
+# A and B had already cost 14.3 h, and because the only json.dump sat at the very end of
+# the cell, all of it was lost. Results are now reloaded from the last run and written
+# back after EVERY study, so a later failure costs one study instead of all of them.
+RESULTS_PATH = f'{MODULE8_DIR}/module8_hpo.json'
 results = {}
+if os.path.exists(RESULTS_PATH):
+    try:
+        results = json.load(open(RESULTS_PATH)).get('results', {}) or {}
+        # JSON stringifies B_context's integer window keys. Restore them, or sorted()
+        # orders them lexically ('16','32','4','8') and the Study B panel plots nonsense.
+        if isinstance(results.get('B_context'), dict):
+            results['B_context'] = {int(k): v for k, v in results['B_context'].items()}
+        print(f'  Resuming        : {len(results)} study block(s) loaded from '
+              f'{RESULTS_PATH}')
+        for _k in sorted(results):
+            print(f'                    · {_k}')
+    except Exception as _e:
+        print(f'  ⚠️  {RESULTS_PATH} unreadable ({_e}); starting with none. It will be '
+              f'overwritten.')
+
+def save_results(stage):
+    """Write everything gathered so far. Called after each study, so an OOM or a
+    disconnect in a later study cannot discard an earlier one."""
+    json.dump({'config': {'backbone_epochs': BACKBONE_EPOCHS, 'seed': SEED,
+                          'a_subset': A_SUBSET, 'a_steps': A_STEPS,
+                          'a_samples': A_SAMPLES, 'b_windows': B_WINDOWS,
+                          'c_window': C_WINDOW, 'c_epochs': C_EPOCHS,
+                          'd_epochs': D_EPOCHS, 'd_micro': D_MICRO,
+                          'd_fraction': D_TRAIN_FRAC, 'val_windows': M_va},
+               'results': results},
+              open(RESULTS_PATH, 'w'), indent=2)
+    print(f'    ✅ saved after {stage} -> {RESULTS_PATH}')
 
 # ════════════════════════════════════════════════════════════════════
 # STUDY A — inference cost vs accuracy, on the trained model
@@ -440,6 +489,7 @@ if RUN_A:
                   f'knee (within 1%) {knee["steps"]}x{knee["samples"]} at '
                   f'{knee["forward_passes"]} forward passes '
                   f'({bestA["forward_passes"] / knee["forward_passes"]:.1f}x cheaper)')
+            save_results('Study A')
 
 # ════════════════════════════════════════════════════════════════════
 # STUDY B — context length
@@ -454,32 +504,84 @@ if RUN_B:
     results['B_context'] = out
     ws = sorted(out)
     gain = (out[ws[0]]['mpe'] - out[ws[-1]]['mpe']) / out[ws[0]]['mpe'] * 100
-    print(f'    going from W={ws[0]} to W={ws[-1]} changes MPE by {gain:+.1f}%')
+    best_w = min(out, key=lambda w: out[w]['mpe'])
+    print(f'    going from W={ws[0]} to W={ws[-1]} changes MPE by {gain:+.1f}% '
+          f'(positive = wider is better)')
+    print(f'    best window tried: W={best_w}  MPE {out[best_w]["mpe"]:.6f}')
     if abs(gain) < 2:
         print('    → essentially flat: the model is not limited by how much past it sees,'
               '\n      so widening the window further is unlikely to be where the gain is.')
+    elif gain > 0:
+        print('    → context length matters measurably and wider is better; a Module 4'
+              '\n      re-run at larger W is worth testing.')
     else:
-        print('    → context length matters measurably; a Module 4 re-run at larger W is'
-              '\n      worth testing.')
+        # The original branch recommended widening whenever |gain| >= 2, so on a negative
+        # gain it advised the exact opposite of what had just been measured.
+        print(f'    → WIDER IS WORSE: W={ws[-1]} is {abs(gain):.1f}% worse than W={ws[0]},'
+              f'\n      and W={best_w} is the best of those tried. The deployed model is '
+              f'trained at\n      W={W_FULL} -- report this as the ablation result it is, '
+              f'not as support\n      for that choice.')
+    save_results('Study B')
 
 # ════════════════════════════════════════════════════════════════════
 # STUDY C — optimisation sensitivity, one factor at a time
 # ════════════════════════════════════════════════════════════════════
 if RUN_C:
     print('\n  STUDY C — optimisation sensitivity (one factor at a time)')
+
+    # The reference MUST size its batch for the window it actually runs at. The original
+    # passed batch=BACKBONE_BATCH (32, the W=4 reference) while defaulting window=W_FULL
+    # (32), i.e. 8x the activation footprint batch_for_window() was written to hold
+    # constant -- and it OOMed on the very first training, before a single number.
+    C_BATCH = batch_for_window(C_WINDOW)
     ref = dict(optim='adamw', lr=BACKBONE_LR, schedule='cosine', wd=1e-2,
-               batch=BACKBONE_BATCH, hidden=BACKBONE_HIDDEN, layers=3)
-    ref_mpe, ref_s, _ = train_backbone(**ref)
-    print(f'    reference {ref} -> MPE {ref_mpe:.6f} ({ref_s:.0f}s)')
+               batch=C_BATCH, hidden=BACKBONE_HIDDEN, layers=3,
+               window=C_WINDOW, epochs=C_EPOCHS)
+
+    # A batch is only admissible if batch x points x window stays inside the footprint
+    # Study B already proved safe, doubled -- the backbone is far lighter per token than
+    # the diffusion model, but 'vary the batch' must not mean 'OOM at the top value'.
+    C_TOKEN_CAP = 2 * BACKBONE_BATCH * 4 * N_A
+
+    def c_batch_values(ref_batch):
+        cand = [max(2, ref_batch // 2), ref_batch * 2]
+        keep, drop = [], []
+        for b in dict.fromkeys(cand):
+            if b == ref_batch:
+                continue
+            (keep if b * N_A * C_WINDOW <= C_TOKEN_CAP else drop).append(b)
+        for b in drop:
+            print(f'    batch={b} skipped: {b * N_A * C_WINDOW:,} token positions exceeds '
+                  f'the {C_TOKEN_CAP:,} cap')
+        return keep
+
     factors = {
         'optimiser':     ('optim', ['adam', 'sgd']),
         'learning rate': ('lr', [1e-4, 3e-4, 3e-3]),
         'schedule':      ('schedule', ['constant', 'step']),
         'weight decay':  ('wd', [0.0, 5e-2]),
-        'batch size':    ('batch', [16, 64]),
+        'batch size':    ('batch', c_batch_values(C_BATCH)),
         'width':         ('hidden', [128, 512]),
         'depth':         ('layers', [1, 6]),
     }
+
+    # Budget, from Study B's own measured seconds at this window rather than a guess.
+    _n_runs = 1 + sum(len(v) for _, v in factors.values())
+    _b = results.get('B_context') or {}
+    _b_secs = next((_b[k].get('seconds') for k in (C_WINDOW, str(C_WINDOW)) if k in _b),
+                   None)
+    if _b_secs:
+        _est = _n_runs * (_b_secs / BACKBONE_EPOCHS) * C_EPOCHS
+        print(f'    budget: {_n_runs} backbones at W={C_WINDOW}, {C_EPOCHS} epochs each '
+              f'≈ {_est / 3600:.1f} h\n            (Study B measured {_b_secs:.0f}s for '
+              f'{BACKBONE_EPOCHS} epochs at W={C_WINDOW}; width and depth variants move '
+              f'this either way)')
+    else:
+        print(f'    budget: {_n_runs} backbones at W={C_WINDOW}, {C_EPOCHS} epochs each. '
+              f'No Study B timing for W={C_WINDOW} to estimate from.')
+
+    ref_mpe, ref_s, _ = train_backbone(**ref)
+    print(f'    reference {ref} -> MPE {ref_mpe:.6f} ({ref_s:.0f}s)')
     sens = {}
     for label, (key, values) in factors.items():
         rows = [{'value': ref[key], 'mpe': ref_mpe, 'reference': True}]
@@ -490,10 +592,19 @@ if RUN_C:
             print(f'    {label:<15} {key}={v!r:<10} MPE {mpe:.6f}')
         spread = (max(r['mpe'] for r in rows) - min(r['mpe'] for r in rows)) / ref_mpe * 100
         sens[label] = {'key': key, 'rows': rows, 'spread_pct': spread}
-    results['C_optimisation'] = {'reference': {**ref, 'mpe': ref_mpe}, 'factors': sens}
+    results['C_optimisation'] = {'reference': {**ref, 'mpe': ref_mpe},
+                                 'window': C_WINDOW, 'epochs': C_EPOCHS,
+                                 'note': (f'Run at W={C_WINDOW} over {C_EPOCHS} epochs, '
+                                          f'not the deployed W={W_FULL}/'
+                                          f'{BACKBONE_EPOCHS}: this study ranks factors '
+                                          f'against each other, and the absolute MPE of '
+                                          f'each cell is not comparable with Study A or '
+                                          f'Module 7.'),
+                                 'factors': sens}
     print('\n    sensitivity ranking (spread in MPE across the values tried):')
     for label, d in sorted(sens.items(), key=lambda kv: -kv[1]['spread_pct']):
         print(f'      {label:<15} {d["spread_pct"]:>6.1f}%')
+    save_results('Study C')
 
 # ════════════════════════════════════════════════════════════════════
 # STUDY D — diffusion ablations (opt-in)
@@ -614,19 +725,20 @@ else:
 # ════════════════════════════════════════════════════════════════════
 # OUTPUT
 # ════════════════════════════════════════════════════════════════════
-json.dump({'config': {'backbone_epochs': BACKBONE_EPOCHS, 'seed': SEED,
-                      'a_subset': A_SUBSET, 'a_steps': A_STEPS, 'a_samples': A_SAMPLES,
-                      'b_windows': B_WINDOWS, 'd_epochs': D_EPOCHS, 'd_micro': D_MICRO,
-                      'd_fraction': D_TRAIN_FRAC, 'val_windows': M_va},
-           'results': results},
-          open(f'{MODULE8_DIR}/module8_hpo.json', 'w'), indent=2)
-print(f'\n  Results written : {MODULE8_DIR}/module8_hpo.json')
+save_results('all studies')
+print(f'  Results written : {RESULTS_PATH}')
 
-n_panels = sum([RUN_A, RUN_B, RUN_C])
+# Keyed on what results actually hold, not on the RUN_* flags: a resumed run has
+# Study A and B loaded from disk with RUN_A/RUN_B False, and they still belong on the
+# figure.
+has_A = 'A_inference' in results
+has_B = 'B_context' in results
+has_C = 'C_optimisation' in results
+n_panels = sum([has_A, has_B, has_C])
 if n_panels:
     fig, axes = plt.subplots(1, max(n_panels, 2), figsize=(6.5 * max(n_panels, 2), 5))
     ax_i = 0
-    if RUN_A:
+    if has_A:
         ax = axes[ax_i]; ax_i += 1
         g = results['A_inference']
         for ns in A_SAMPLES:
@@ -641,13 +753,13 @@ if n_panels:
         ax.set_ylabel('Mean Point Error')
         ax.set_title('A — inference cost vs accuracy', fontweight='bold')
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
-    if RUN_B:
+    if has_B:
         ax = axes[ax_i]; ax_i += 1
-        ws = sorted(results['B_context'])
+        ws = sorted(results['B_context'], key=int)
         ax.plot(ws, [results['B_context'][w]['mpe'] for w in ws], marker='o', color='#1F6F6B')
         ax.set_xticks(ws); ax.set_xlabel('context frames W'); ax.set_ylabel('Mean Point Error')
         ax.set_title('B — does more past help?', fontweight='bold'); ax.grid(alpha=0.3)
-    if RUN_C:
+    if has_C:
         ax = axes[ax_i]; ax_i += 1
         s = results['C_optimisation']['factors']
         labs = sorted(s, key=lambda l: s[l]['spread_pct'])
