@@ -7,6 +7,7 @@ this suite runs on a laptop with neither torch nor a Drive mount.
 """
 import ast
 import json
+import math
 import os
 import unittest
 
@@ -14,7 +15,8 @@ import numpy as np
 
 SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    'module9_demo_export.py')
-NAMES = ['needed_frame_indices', 'frame_file_map', 'motion_by_horizon', 'js_payload']
+NAMES = ['needed_frame_indices', 'frame_file_map', 'motion_by_horizon', 'js_payload',
+         'camera_from', 'project_norm']
 
 
 def load_helpers():
@@ -24,7 +26,7 @@ def load_helpers():
             if isinstance(n, ast.FunctionDef) and n.name in NAMES}
     missing = set(NAMES) - set(want)
     assert not missing, f'helpers not at module level: {sorted(missing)}'
-    ns = {'np': np, 'json': json}
+    ns = {'np': np, 'json': json, 'math': math}
     exec(compile(ast.Module(body=[want[n] for n in NAMES], type_ignores=[]),
                  SRC, 'exec'), ns)
     return ns
@@ -130,8 +132,79 @@ class TestNotebookSync(unittest.TestCase):
         self.assertEqual(len(hits), 1,
                          f'expected the Module 9 export in exactly one cell, found {hits}')
 
+    def test_the_standalone_cell_is_synced_too(self):
+        """Cell 50 holds the generated standalone export. It drifted once already,
+        silently, because only cell 48 was checked -- and the generated file changes
+        whenever its sources do, which is exactly when nobody thinks to resync it."""
+        gen = os.path.join(os.path.dirname(SRC), 'module9_demo_standalone.py')
+        with open(gen, encoding='utf-8') as fh:
+            want = fh.read().strip()
+        hits = [i for i, c in enumerate(self._cells()) if c.strip() == want]
+        self.assertEqual(hits, [50], f'standalone cell out of sync; matched {hits}')
+
     def test_the_module9_cell_is_at_index_48(self):
         with open(SRC, encoding='utf-8') as fh:
             want = fh.read().strip()
         self.assertEqual(self._cells()[48].strip(), want,
                          'cell 48 has drifted from module9_demo_export.py')
+
+
+class TestOverlayProjection(unittest.TestCase):
+    """Drawing the prediction onto the endoscopic frame.
+
+    Module 6 states the trajectories are already in camera space ("World (= camera)
+    points"), so no extrinsics are involved -- only the pinhole intrinsics. The export
+    does the projection, because the browser must not carry camera maths or assumptions.
+    """
+
+    def setUp(self):
+        self.h = load_helpers()
+
+    def test_a_point_on_the_optical_axis_lands_at_the_principal_point(self):
+        cam = {'fx': 100.0, 'fy': 100.0, 'cx': 320.0, 'cy': 180.0, 'W': 640, 'H': 360}
+        uv = self.h['project_norm'](np.array([[0.0, 0.0, 2.0]]), cam)
+        self.assertAlmostEqual(float(uv[0][0]), 0.5, places=6)
+        self.assertAlmostEqual(float(uv[0][1]), 0.5, places=6)
+
+    def test_projection_is_resolution_independent(self):
+        """Normalised [0,1] coordinates, so the browser can draw at any displayed size
+        and the exported JPEG's own width never enters the payload."""
+        pt = np.array([[1.0, 0.0, 1.0]])
+        small = {'fx': 100.0, 'fy': 100.0, 'cx': 320.0, 'cy': 180.0, 'W': 640, 'H': 360}
+        large = {'fx': 200.0, 'fy': 200.0, 'cx': 640.0, 'cy': 360.0, 'W': 1280, 'H': 720}
+        a = float(self.h['project_norm'](pt, small)[0][0])
+        b = float(self.h['project_norm'](pt, large)[0][0])
+        self.assertAlmostEqual(a, b, places=9)
+        self.assertAlmostEqual(a, 420.0 / 640.0, places=9)
+
+    def test_a_point_behind_the_camera_does_not_blow_up(self):
+        cam = {'fx': 100.0, 'fy': 100.0, 'cx': 320.0, 'cy': 180.0, 'W': 640, 'H': 360}
+        uv = self.h['project_norm'](np.array([[1.0, 1.0, -5.0], [1.0, 1.0, 0.0]]), cam)
+        self.assertTrue(np.all(np.isfinite(uv)), 'a non-finite pixel would poison the canvas')
+
+    def test_real_intrinsics_are_used_and_marked_calibrated(self):
+        meta = {'fx': 500.0, 'fy': 501.0, 'cx': 320.0, 'cy': 180.0, 'W': 640, 'H': 360}
+        cam = self.h['camera_from'](meta, (360, 640))
+        self.assertEqual(cam['calibrated'], True)
+        self.assertAlmostEqual(cam['fx'], 500.0)
+        self.assertAlmostEqual(cam['fy'], 501.0)
+
+    def test_absent_intrinsics_fall_back_and_say_so(self):
+        """Module 1's documented 75-degree fallback. The overlay is then plausible but
+        NOT calibrated, and the payload has to carry that distinction or the app will
+        present a guess with the same confidence as a measurement."""
+        cam = self.h['camera_from'](None, (360, 640))
+        self.assertEqual(cam['calibrated'], False)
+        self.assertAlmostEqual(cam['fx'], (640 / 2) / math.tan(math.radians(75.0) / 2), places=6)
+        self.assertEqual(cam['cx'], 320.0)
+        self.assertEqual(cam['cy'], 180.0)
+
+    def test_the_payload_carries_pixel_coordinates_and_the_camera_block(self):
+        with open(SRC) as fh:
+            src = fh.read()
+        self.assertIn("'camera': cam", src,
+                      'the payload must state which intrinsics the overlay used')
+        self.assertIn("'px_ctx': enc(", src, 'the observed frame needs image coordinates')
+        self.assertIn("f'px_{tag}{k}': enc(", src,
+                      'gt, pred and cv each need image coordinates per horizon')
+        self.assertIn("for tag in ('gt', 'pred', 'cv')", src)

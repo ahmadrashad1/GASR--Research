@@ -50,9 +50,9 @@ t.test('the research viewer is untouched by this task', () => {
 // paths can be driven rather than reasoned about.
 function harness(payload){
   const known = new Set([...html.matchAll(/id=["']([^"']+)["']/g)].map(m => m[1]));
-  const arcs = [];
-  const ctx = new Proxy({}, {
-    get: (o, k) => (k === 'arc' ? ((x,y,r) => arcs.push(r)) : (k in o ? o[k] : () => {})),
+  const arcs = [], ovlArcs = [];
+  const mkCtx = sink => new Proxy({}, {
+    get: (o, k) => (k === 'arc' ? ((x,y,r) => sink.push(r)) : (k in o ? o[k] : () => {})),
     set: (o, k, v) => (o[k] = v, true),
   });
   const made = new Map(), listeners = {};
@@ -71,7 +71,7 @@ function harness(payload){
       addEventListener: (t, fn) => { (listeners[id] = listeners[id] || {})[t] = fn; },
       removeAttribute: at => { if (at === 'src') e._src = null; },
       setAttribute: () => {}, setPointerCapture: () => {},
-      getContext: () => ctx,
+      getContext: () => mkCtx(id === 'ovl' ? ovlArcs : arcs),
       getBoundingClientRect: () => ({width:1280, height:720}),
     };
     Object.defineProperty(e, 'src', { get: () => e._src, set: v => { e._src = v; } });
@@ -110,7 +110,7 @@ function harness(payload){
     fire: (id, type) => listeners[id] && listeners[id][type] &&
                         listeners[id][type].call(document.getElementById(id)),
     tick: () => tick && tick(),
-    arcs,
+    arcs, ovlArcs,
   };
 }
 
@@ -248,4 +248,59 @@ t.test('a payload with no horizons list still renders instead of going blank', (
   delete d.horizons;
   const h = harness(d);
   a.match(h.el('title').textContent, /\S/);
+});
+
+// ── Overlay: the prediction drawn on the endoscopic frame ────────────────────
+// The export projects; the page only draws where it is told. These check that it draws
+// when it can, degrades when it cannot, and never presents uncalibrated intrinsics with
+// the confidence of measured ones.
+function withOverlay(d){
+  d = withFrameFiles(d);
+  d.camera = {fx:417.0, fy:417.0, cx:320.0, cy:180.0, W:640, H:360, calibrated:true};
+  for (const f of d.frames){
+    const n = d.n_points;
+    const uv = () => { const o = []; for (let i=0;i<n;i++) o.push(0.2 + 0.6*i/n, 0.3 + 0.4*i/n); return o; };
+    f.px_ctx = uv();
+    for (const k of [1,3]){ f['px_gt'+k] = uv(); f['px_pred'+k] = uv(); f['px_cv'+k] = uv(); }
+  }
+  return d;
+}
+
+t.test('a scene with the overlay layer draws onto the frame', () => {
+  const h = harness(withOverlay(realPayload()));
+  goTo(h, 'prediction');
+  a.ok(h.el('ovl'), 'the overlay canvas must exist');
+  a.strictEqual(h.el('stage')._cls.has('withframe'), true,
+                'the overlay scene must show the endoscopic still');
+  a.ok(h.ovlArcs.length > 0, 'nothing was drawn on the overlay');
+});
+
+t.test('an export without pixel coordinates still renders, without an overlay', () => {
+  // The payload that is on Drive today predates the projection. Loading it must not
+  // throw and must not leave an empty canvas floating over the video.
+  const h = harness(withFrameFiles(realPayload()));
+  goTo(h, 'prediction');
+  a.strictEqual(h.ovlArcs.length, 0, 'drew an overlay with no coordinates to draw');
+  a.match(h.el('body').textContent, /\S/);
+});
+
+t.test('an uncalibrated overlay says so rather than passing as measured', () => {
+  const d = withOverlay(realPayload());
+  d.camera.calibrated = false;
+  const h = harness(d);
+  goTo(h, 'prediction');
+  a.match(h.el('warn').textContent, /not calibrated|uncalibrated|assumed/i,
+          'a guessed field of view must be declared on screen');
+});
+
+t.test('a calibrated overlay raises no warning of its own', () => {
+  const h = harness(withOverlay(realPayload()));
+  goTo(h, 'prediction');
+  a.doesNotMatch(h.el('warn').textContent, /calibrat/i);
+});
+
+t.test('placeholder mode never draws an overlay', () => {
+  const h = harness(null);
+  for (let i = 0; i < 7; i++){ h.key('ArrowRight'); }
+  a.strictEqual(h.ovlArcs.length, 0, 'invented geometry must not be drawn on imagery');
 });

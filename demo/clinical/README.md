@@ -59,6 +59,26 @@ rehearsed. In that mode:
   comes from the export. A generated "endoscopic" picture would be synthetic clinical
   imagery on a projector, which is worse than an honest blank.
 
+## The overlay
+
+Scenes 4, 5 and 6 draw the tracked points **on the endoscopic frame itself**, beside the
+3D view. Nothing is computed in the browser: Module 9 projects the same arrays it
+exports, using the sequence's own pinhole intrinsics, and writes image coordinates in
+[0,1] alongside the 3D ones. The page just draws where it is told, so the overlay and
+the figures can never disagree — they are the same numbers in two spaces.
+
+No extrinsics are involved. The trajectories are already in camera space, which is why
+this was cheap enough to build; the earlier design assumed otherwise and ruled it out.
+
+**If the sequence has no `camera_meta.json`**, the export falls back to Module 1's
+documented 75° field of view, marks the payload `calibrated: false`, and the app states
+on screen that the points are placed plausibly rather than measurably. The geometry and
+every figure beside it are unaffected — only the position of the dots on the image is
+assumed. Check the export's console line if you want to know which you have.
+
+An export made before the overlay existed has no image coordinates; the app detects
+that and simply shows the still without dots.
+
 ## Controls
 
 | Key | Button | Action |

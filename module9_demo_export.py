@@ -126,6 +126,40 @@ def motion_by_horizon(frames, horizons):
     return out
 
 
+def camera_from(meta, frame_hw):
+    """Pinhole intrinsics for drawing predictions onto the endoscopic frame.
+
+    Module 6 projects with exactly these and states the trajectories are already in
+    camera space -- "World (= camera) points" -- so no extrinsics are involved. When
+    camera_meta.json is absent Module 1's documented fallback is a 75-degree horizontal
+    FOV with a centred principal point; the overlay is then plausible but NOT measured,
+    and 'calibrated' carries that distinction into the payload so the app can say so
+    rather than presenting a guess with the confidence of a measurement."""
+    if meta:
+        return {'fx': float(meta['fx']), 'fy': float(meta['fy']),
+                'cx': float(meta['cx']), 'cy': float(meta['cy']),
+                'W': int(meta['W']), 'H': int(meta['H']), 'calibrated': True}
+    H_, W_ = int(frame_hw[0]), int(frame_hw[1])
+    fx = (W_ / 2) / math.tan(math.radians(75.0) / 2)
+    return {'fx': fx, 'fy': fx, 'cx': W_ / 2.0, 'cy': H_ / 2.0,
+            'W': W_, 'H': H_, 'calibrated': False}
+
+
+def project_norm(world, cam):
+    """Camera-space points -> image coordinates in [0, 1].
+
+    Normalised rather than in pixels so the payload does not depend on the size the
+    frames were exported at, and the browser can draw at whatever size the image
+    happens to be displayed. z is clipped away from zero: a point at or behind the
+    camera would otherwise produce a non-finite coordinate, and one NaN reaching a
+    canvas path discards the whole path silently."""
+    world = np.asarray(world, dtype=np.float64)
+    z = np.clip(world[..., 2], 1e-6, None)
+    u = (world[..., 0] / z * cam['fx'] + cam['cx']) / cam['W']
+    v = (world[..., 1] / z * cam['fy'] + cam['cy']) / cam['H']
+    return np.stack([u, v], -1)
+
+
 def js_payload(obj):
     """The identical payload as a classic script, because file:// forbids fetch() and
     ES modules but permits <script src>. This is how the demonstrator loads its data
@@ -161,6 +195,22 @@ def _timing_for(ws, indices):
         return {'timing_ok': False}
     return {'timing_ok': True, 'fps': float(tim.get('fps') or 0.0),
             'gap_min': int(gaps.min()), 'gap_max': int(gaps.max())}
+
+
+def _frame_hw(ws):
+    """(H, W) of this workspace's frames, for the uncalibrated-intrinsics fallback."""
+    src_dir = f'{DRIVE_BASE}/{ws}/frames'
+    try:
+        import cv2
+        import glob as _glob
+        hit = sorted(_glob.glob(f'{src_dir}/*.png') + _glob.glob(f'{src_dir}/*.jpg'))
+        if hit:
+            im = cv2.imread(hit[0])
+            if im is not None:
+                return int(im.shape[0]), int(im.shape[1])
+    except Exception:
+        pass
+    return 360, 640
 
 
 def _export_frames(ws, indices):
@@ -218,11 +268,32 @@ def export_demo(vid, name):
 
     origins = (_subsample(hi - lo, DEMO_ORIGINS) + lo).tolist()
     pts = _subsample(tn.shape[1], DEMO_POINTS)
+
+    # ── Overlay: the same points, in image coordinates ───────────────────────────
+    # The trajectories here are normalised; Module 6's denorm (x * scl + ctr) returns
+    # them to camera space, which is the space its own project() expects -- it calls
+    # them "World (= camera) points", so there are no extrinsics in this at all. The
+    # projection is done HERE rather than in the browser so the page carries no camera
+    # maths and no assumption of its own; it just draws where it is told.
+    _cam_path = f'{DRIVE_BASE}/{vid["workspace"]}/camera_meta.json'
+    _meta = None
+    if os.path.exists(_cam_path):
+        with open(_cam_path) as fh:
+            _meta = json.load(fh)
+    cam = camera_from(_meta, _frame_hw(vid['workspace']))
+    if not cam['calibrated']:
+        print(f'    camera_meta.json absent — overlay uses Module 1\'s 75° fallback '
+              f'and is flagged uncalibrated')
+
+    def to_world(a):
+        return np.asarray(a) * vid['scl'] + vid['ctr']
+
     frames = []
 
     for t in origins:
         ctx = tn[t - WINDOW_SIZE:t].unsqueeze(0)              # (1, W, N_A, 3)
         row = {'t': int(t), 'ctx': tn[t - 1][pts].cpu().numpy(), 'img': int(t) - 1}
+        row['px_ctx'] = project_norm(to_world(row['ctx']), cam)
         for k in DEMO_HORIZONS:
             a = DEMO_ALPHA[k]
             hs = torch.full((1,), k, device=DEVICE, dtype=torch.long)
@@ -239,6 +310,8 @@ def export_demo(vid, name):
             hyps = predict_direct(ctx.repeat(DEMO_SAMPLES, 1, 1, 1), k, disp_norm=dn,
                                   eta=1.0, n_samples=1, alpha=a)       # (S, N_A, 3)
             row[f'sigma{k}'] = hyps.std(dim=0).norm(dim=-1)[pts].cpu().numpy()
+            for tag in ('gt', 'pred', 'cv'):
+                row[f'px_{tag}{k}'] = project_norm(to_world(row[f'{tag}{k}']), cam)
         frames.append(row)
 
     # One shared normalisation so the viewer never has to rescale mid-playback, which
@@ -292,14 +365,21 @@ def export_demo(vid, name):
         # viewer drawing a zero-radius uncertainty cloud around a prediction it presents
         # as the model's, which is the most misleading thing this payload could carry.
         'degenerate_horizons': [str(k) for k in DEMO_HORIZONS if DEMO_ALPHA[k] == 0.0],
+        # Which intrinsics the overlay used, and whether they were measured. An
+        # uncalibrated overlay is plausible, not correct, and the app says so.
+        'camera': cam,
         'timing': _timing_for(vid['workspace'], idx),
         'frame_files': {str(i): p for i, p in frame_files.items()},
         'mean_error': err,
         'frames': [
-            dict({'t': f['t'], 'ctx': enc(f['ctx']), 'img': f['img']},
+            dict({'t': f['t'], 'ctx': enc(f['ctx']), 'img': f['img'],
+                  'px_ctx': enc(f['px_ctx'])},
                  **{f'{tag}{k}': (enc(f[f'{tag}{k}']) if tag != 'img' else f[f'img{k}'])
                     for k in DEMO_HORIZONS
-                    for tag in ('gt', 'pred', 'cv', 'sigma', 'img')})
+                    for tag in ('gt', 'pred', 'cv', 'sigma', 'img')},
+                 **{f'px_{tag}{k}': enc(f[f'px_{tag}{k}'])
+                    for k in DEMO_HORIZONS
+                    for tag in ('gt', 'pred', 'cv')})
             for f in frames
         ],
     }

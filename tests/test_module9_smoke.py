@@ -47,8 +47,12 @@ def stub_globals(drive_base):
         return base_pred(ctx, hstep) + alpha * to_physical(noise + 0.1, disp_norm)
 
     return {
+        # scl/ctr are what Module 6's rebuild_video records (module6_prediction.py:505)
+        # and are what returns a normalised trajectory to camera space for the overlay
+        # projection. A fixture without them is not a stand-in for `videos`.
         'videos': [{'video_id': 3, 'workspace': 'workspace_demo', 'traj_n': traj,
-                    'disp_norm': 1.25, 'n_frames': T, 'split_frame': SPLIT}],
+                    'disp_norm': 1.25, 'n_frames': T, 'split_frame': SPLIT,
+                    'ctr': np.zeros(3, dtype=np.float32), 'scl': 2.0}],
         'predict_direct': predict_direct, 'base_pred': base_pred,
         'to_physical': to_physical,
         'BUNDLE': {'epoch': 100, 'target_mode': 'cv_residual', 'data_scale': 10.0},

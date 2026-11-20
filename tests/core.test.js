@@ -88,16 +88,22 @@ t.test('there are exactly seven scenes in spec order', () => {
 });
 
 t.test('every scene declares only known layers', () => {
-  const ok = new Set(['frame','ctx','gt','pred','cv','still','sigma']);
+  const ok = new Set(['frame','overlay','ctx','gt','pred','cv','still','sigma']);
   for (const s of S) {
     a.ok(s.title && s.body, `${s.id} needs title and body`);
     for (const l of s.layers) a.ok(ok.has(l), `${s.id}: unknown layer ${l}`);
   }
 });
 
-t.test('only the first two scenes use endoscopic imagery', () => {
+t.test('endoscopic imagery appears only in the scenes that declare it', () => {
+  // The spec originally ruled out drawing predictions on the frame, assuming a true
+  // overlay needed extrinsics out of the splatting workspace. Module 6's own
+  // project() shows the trajectories are already in camera space, so only intrinsics
+  // are involved and the overlay is cheap. Scenes 4-6 therefore declare it.
   a.deepStrictEqual(S.filter(s => s.layers.includes('frame')).map(s => s.id),
                     ['sees','reconstructs']);
+  a.deepStrictEqual(S.filter(s => s.layers.includes('overlay')).map(s => s.id),
+                    ['prediction','baselines','uncertainty']);
 });
 
 t.test('no scene hard-codes a comparative claim', () => {

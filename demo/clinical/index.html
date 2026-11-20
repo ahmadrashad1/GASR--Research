@@ -61,6 +61,9 @@ td.n{font-variant-numeric:tabular-nums; text-align:right}
 #framebox{position:relative; border-right:1px solid var(--line); display:none}
 #stage.withframe #framebox{display:block}
 #shot{width:100%; height:100%; object-fit:contain; display:block}
+/* Sits exactly over the still. The export supplies image coordinates, so nothing here
+   knows anything about cameras. */
+#ovl{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
 #noimg{
   position:absolute; inset:0; display:none; place-content:center; text-align:center;
   padding:40px; color:var(--dim); font-size:16px;
@@ -117,6 +120,7 @@ kbd{
   <section id="stage">
     <div id="framebox">
       <img id="shot" alt="endoscopic frame from the exported sequence">
+      <canvas id="ovl"></canvas>
       <!-- Shown whenever the imagery is not on disk: placeholder mode always, and real
            data whose export ran without the frames directory. A broken-image icon in
            front of an examination panel is the failure this panel exists to prevent. -->
@@ -298,6 +302,50 @@ function draw(){
   ).join('');
 }
 
+/* ── the overlay: predictions drawn on the endoscopic still ───── */
+// Coordinates arrive already in [0,1] image space, projected by the export with the
+// sequence's own intrinsics. Nothing here knows about cameras, and nothing here can
+// disagree with the figures: it is the same arrays, in a different space.
+function drawOverlay(){
+  const c = $('ovl');
+  if (!c) return;
+  const box = c.parentElement.getBoundingClientRect();
+  const o = c.getContext('2d');
+  c.width = Math.max(1, box.width * DPR);
+  c.height = Math.max(1, box.height * DPR);
+  o.setTransform(DPR, 0, 0, DPR, 0, 0);
+  o.clearRect(0, 0, box.width, box.height);
+
+  const sc = SCENES[si], f = D.frames[frame];
+  // Invented geometry is never drawn on imagery, and an export made before the
+  // projection existed simply has nothing to draw.
+  if (PLACEHOLDER || !f || !sc.layers.includes('overlay') || !f.px_ctx) return;
+
+  // The still is object-fit:contain, so the drawn rect is the letterboxed one, not the
+  // whole box -- otherwise every point sits off the tissue by the size of the bars.
+  const iw = $('shot').naturalWidth  || (D.camera && D.camera.W) || box.width;
+  const ih = $('shot').naturalHeight || (D.camera && D.camera.H) || box.height;
+  const fit = Math.min(box.width / iw, box.height / ih);
+  const w = iw * fit, h = ih * fit;
+  const ox = (box.width - w) / 2, oy = (box.height - h) / 2;
+
+  const put = (flat, colour, r) => {
+    if (!flat || !flat.length) return;
+    o.fillStyle = colour;
+    for (let i = 0; i < D.n_points; i++){
+      const u = flat[i*2], v = flat[i*2+1];
+      if (!isFinite(u) || !isFinite(v)) continue;
+      o.beginPath(); o.arc(ox + u * w, oy + v * h, r, 0, 6.2832); o.fill();
+    }
+  };
+
+  const want = sc.layers;
+  if (want.includes('still')) put(f.px_ctx, COLOUR.still, 2.2);
+  if (want.includes('cv'))    put(f['px_cv' + K], COLOUR.cv, 2.6);
+  if (want.includes('gt'))    put(f['px_gt' + K], COLOUR.gt, 2.6);
+  if (want.includes('pred'))  put(f['px_pred' + K], COLOUR.pred, 3.2);
+}
+
 /* ── the endoscopic still ───────────────────────────────────── */
 // Stills that have already failed to load. Without this, showFrame() re-assigns the
 // same failing src on every scene change AND on every playback tick -- nine times a
@@ -307,8 +355,8 @@ const failed = new Set();
 
 function showFrame(){
   const sc = SCENES[si], f = D.frames[frame];
-  const wants = sc.layers.includes('frame');
-  const geometry = sc.layers.some(l => l !== 'frame');
+  const wants = sc.layers.includes('frame') || sc.layers.includes('overlay');
+  const geometry = sc.layers.some(l => l !== 'frame' && l !== 'overlay');
   $('stage').classList.toggle('withframe', wants && geometry);
   $('stage').classList.toggle('frameonly', wants && !geometry);
   $('noimgb').textContent = geometry ? STR.noImageBodyWithGeometry : STR.noImageBody;
@@ -329,6 +377,7 @@ function showFrame(){
     $('noimg').classList.add('on');
   }
 }
+$('shot').addEventListener('load', drawOverlay);
 $('shot').addEventListener('error', function(){
   if (this.src) failed.add(String(this.src).split('/').slice(-2).join('/'));
   this.style.display = 'none';
@@ -397,13 +446,21 @@ function render(){
   $('count').textContent = 'SCENE ' + (si+1) + ' OF ' + SCENES.length;
   $('title').textContent = sc.title;
   $('body').textContent = fill(sc.body, K) + missingNote();
-  const deg = degenerate(K);
-  $('warn').textContent = deg ? fill(STR.degenerate, K) : '';
-  $('warn').classList.toggle('on', deg);
+
+  const notes = [];
+  if (degenerate(K)) notes.push(fill(STR.degenerate, K));
+  // An overlay drawn from assumed intrinsics is plausible, not measured, and must not
+  // reach a projector presented as the latter.
+  if (!PLACEHOLDER && sc.layers.includes('overlay') && D.camera &&
+      D.camera.calibrated === false && D.frames[frame] && D.frames[frame].px_ctx) {
+    notes.push(STR.uncalibrated);
+  }
+  $('warn').textContent = notes.join(' ');
+  $('warn').classList.toggle('on', notes.length > 0);
   $('b_k1').classList.toggle('on', K === 1);
   $('b_k3').classList.toggle('on', K === 3);
   $('b_play').textContent = playing ? 'pause' : 'play';
-  showFrame(); readout(); draw();
+  showFrame(); readout(); draw(); drawOverlay();
 }
 
 function go(n){
@@ -418,7 +475,7 @@ function setK(k){
 }
 function step(){
   frame = (frame + 1) % D.n_frames;
-  showFrame(); draw();
+  showFrame(); draw(); drawOverlay();
 }
 
 let timer = null;
@@ -460,7 +517,7 @@ cv.addEventListener('wheel', e => {
   zoom = Math.max(0.35, Math.min(4, zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
   e.preventDefault(); draw();
 }, {passive:false});
-addEventListener('resize', () => { resize(); draw(); });
+addEventListener('resize', () => { resize(); draw(); drawOverlay(); });
 
 /* ── boot ───────────────────────────────────────────────────── */
 $('badge').className = PLACEHOLDER ? 'placeholder' : 'measured';

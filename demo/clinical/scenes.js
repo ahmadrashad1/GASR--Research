@@ -62,7 +62,7 @@ const SCENES = [
       'tracked point will be {horizon}. White is what actually happened; ' +
       'red is the model’s answer. These are held-out frames — this sequence’s ' +
       'later portion was never used to train the model.',
-    layers: ['ctx', 'gt', 'pred'],
+    layers: ['ctx', 'gt', 'pred', 'overlay'],
     horizon: 3,
   },
   {
@@ -74,7 +74,7 @@ const SCENES = [
       'a frame or two both are hard to improve on. The figures below are computed from ' +
       'this sequence as you watch, so they report whichever of the three came closest ' +
       'here rather than whichever we would prefer.',
-    layers: ['ctx', 'gt', 'pred', 'cv', 'still'],
+    layers: ['ctx', 'gt', 'pred', 'cv', 'still', 'overlay'],
     horizon: null,
   },
   {
@@ -85,7 +85,7 @@ const SCENES = [
       'and the halo around each point shows how far apart they were there. A wide halo ' +
       'is the system saying it does not know — which is information a surgeon can act ' +
       'on, and which neither of the simpler guesses can express at all.',
-    layers: ['ctx', 'pred', 'sigma'],
+    layers: ['ctx', 'pred', 'sigma', 'overlay'],
     horizon: null,
   },
   {
@@ -129,6 +129,11 @@ SCENES.strings = {
     'At {horizon} the calibration fit gave the model no weight, so its prediction here ' +
     'is the straight-line one, point for point. The sampled spread is zero and is not ' +
     'drawn: there is no uncertainty to report, rather than none found.',
+
+  uncalibrated:
+    'The overlay is placed using an assumed 75\u00b0 field of view: this sequence has no ' +
+    'recorded camera calibration, so the points sit plausibly on the image rather than ' +
+    'measurably. The geometry and every figure beside it are unaffected.',
 
   legendGt: 'What actually happened',
   legendSigma: 'Spread across sampled futures',

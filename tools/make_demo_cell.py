@@ -56,8 +56,9 @@ DEFS6 = ['GeomMLP', 'sinusoidal_embedding', 'ConditionalDenoiser', 'cosine_beta_
 
 # From Module 9. The export, unchanged, so the two cells cannot produce different
 # payloads.
-DEFS9 = ['needed_frame_indices', 'frame_file_map', 'motion_by_horizon', 'js_payload',
-         '_subsample', '_timing_for', '_export_frames', 'export_demo']
+DEFS9 = ['needed_frame_indices', 'frame_file_map', 'motion_by_horizon',
+         'camera_from', 'project_norm', 'js_payload',
+         '_subsample', '_timing_for', '_frame_hw', '_export_frames', 'export_demo']
 
 # Statement blocks, located by content so a shifted line number cannot silently
 # truncate one. (first line, last line) -- both matched exactly, stripped of trailing
