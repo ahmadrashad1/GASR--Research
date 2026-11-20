@@ -46,9 +46,18 @@ th{color:var(--dim); font-weight:600; font-size:13px; letter-spacing:.07em; text
 td.n{font-variant-numeric:tabular-nums; text-align:right}
 .swatch{display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:8px}
 #scope{color:var(--dim); font-size:13.5px; margin-top:14px}
+#warn{
+  display:none; margin:0 0 20px; padding:12px 15px; font-size:16.5px;
+  border-left:3px solid var(--blood); background:rgba(214,40,40,.10); color:#F0CFCF;
+}
+#warn.on{display:block}
 
 #stage{position:relative; display:grid; grid-template-columns:1fr; min-width:0}
 #stage.withframe{grid-template-columns:1fr 1fr}
+/* Imagery and no geometry: give the still the stage instead of pairing it with an
+   empty black rectangle. Scene 1 is the first thing the panel sees. */
+#stage.frameonly{grid-template-columns:1fr}
+#stage.frameonly #cvwrap{display:none}
 #framebox{position:relative; border-right:1px solid var(--line); display:none}
 #stage.withframe #framebox{display:block}
 #shot{width:100%; height:100%; object-fit:contain; display:block}
@@ -97,6 +106,7 @@ kbd{
     <div id="count"></div>
     <h2 id="title"></h2>
     <p id="body"></p>
+    <div id="warn"></div>
     <div id="readout">
       <p id="verdict"></p>
       <table id="tbl"></table>
@@ -110,13 +120,7 @@ kbd{
       <!-- Shown whenever the imagery is not on disk: placeholder mode always, and real
            data whose export ran without the frames directory. A broken-image icon in
            front of an examination panel is the failure this panel exists to prevent. -->
-      <div id="noimg">
-        <div>
-          <b>Endoscopic imagery comes from the export</b>
-          No frames were found beside this page. The geometry on the right is complete;
-          only the video stills are missing.
-        </div>
-      </div>
+      <div id="noimg"><div><b id="noimgt"></b><span id="noimgb"></span></div></div>
     </div>
     <div id="cvwrap">
       <canvas id="cv"></canvas>
@@ -162,8 +166,16 @@ const COLOUR = {
   still: '#75757E',
   sigma: '#5C0A0A',
 };
+const STR = SCENES.strings;
+// {horizon} and {points} are the only tokens, substituted where the string is used.
+function fill(t, k){
+  return String(t)
+    .replace(/\{horizon\}/g, GASR.horizonLabel(k, null))
+    .replace(/\{points\}/g, D.n_points);
+}
+
 const SERIES_LABEL = {
-  gt: 'What actually happened',
+  gt: STR.legendGt,
   pred: GASR.METHOD_LABELS.ours,
   cv: GASR.METHOD_LABELS.cv,
   still: GASR.METHOD_LABELS.still,
@@ -175,8 +187,21 @@ const REAL = (typeof window.DEMO_DATA !== 'undefined' && window.DEMO_DATA) ? win
 const D = REAL || window.synth();
 const PLACEHOLDER = !REAL || D.synthetic === true;
 
+// An older or hand-edited payload can lack horizons entirely. Reading it unguarded
+// throws before the first render, and a blank page with nothing on it to explain why is
+// the worst failure available in a room.
+const HORIZONS = (D.horizons && D.horizons.length) ? D.horizons : [1];
+
 let si = 0, frame = 0, K = 3, playing = false;
 let yaw = 0.6, pitch = 0.25, zoom = 1;
+
+// A horizon where the fitted alpha was 0. The exporter records these because pred{k}
+// is then EXACTLY cv{k} and sigma{k} is identically zero -- so a halo drawn from it
+// would be a measured-looking cloud around a prediction that is the baseline. Its own
+// comment calls that the most misleading thing the payload could carry.
+function degenerate(k){
+  return (D.degenerate_horizons || []).map(String).indexOf(String(k)) !== -1;
+}
 
 // Points arrive flat and are unpacked once per frame per series, not once per draw.
 const cache = new Map();
@@ -221,6 +246,7 @@ function dot(p, colour, r){
 function draw(){
   if (!W) resize();
   g.clearRect(0,0,W,H);
+  $('legend').innerHTML = '';
   const sc = SCENES[si], f = D.frames[frame];
   if (!f) return;
 
@@ -231,7 +257,7 @@ function draw(){
   if (want.includes('pred'))  series.pred  = pts(f, 'pred' + K);
   if (want.includes('cv'))    series.cv    = pts(f, 'cv' + K);
   if (want.includes('still')) series.still = pts(f, 'ctx');   // freeze in place
-  const sigma = want.includes('sigma') ? f['sigma' + K] : null;
+  const sigma = (want.includes('sigma') && !degenerate(K)) ? f['sigma' + K] : null;
 
   // Depth order from whichever series is present, so the painter's algorithm still
   // works when a horizon is missing some of them.
@@ -266,23 +292,33 @@ function draw(){
   if (series.pred)  items.push(['pred', SERIES_LABEL.pred]);
   if (series.cv)    items.push(['cv', SERIES_LABEL.cv]);
   if (series.still) items.push(['still', SERIES_LABEL.still]);
-  if (sigma)        items.push(['sigma', 'Spread across sampled futures']);
+  if (sigma)        items.push(['sigma', STR.legendSigma]);
   $('legend').innerHTML = items.map(it =>
     '<span><i class="swatch" style="background:' + COLOUR[it[0]] + '"></i>' + it[1] + '</span>'
   ).join('');
 }
 
 /* ── the endoscopic still ───────────────────────────────────── */
+// Stills that have already failed to load. Without this, showFrame() re-assigns the
+// same failing src on every scene change AND on every playback tick -- nine times a
+// second -- so the panel is torn down and a broken-image box with its alt text is put
+// in front of the room, which is the failure the panel exists to prevent.
+const failed = new Set();
+
 function showFrame(){
   const sc = SCENES[si], f = D.frames[frame];
   const wants = sc.layers.includes('frame');
-  $('stage').classList.toggle('withframe', wants);
+  const geometry = sc.layers.some(l => l !== 'frame');
+  $('stage').classList.toggle('withframe', wants && geometry);
+  $('stage').classList.toggle('frameonly', wants && !geometry);
+  $('noimgb').textContent = geometry ? STR.noImageBodyWithGeometry : STR.noImageBody;
+  $('noimgt').textContent = STR.noImageTitle;
   if (!wants) return;
 
   const files = D.frame_files || {};
   const idx = (f && f.img != null) ? String(f.img) : null;
   const name = idx != null ? files[idx] : null;
-  if (name){
+  if (name && !failed.has(name)){
     $('noimg').classList.remove('on');
     $('shot').style.display = 'block';
     $('shot').src = name;
@@ -294,6 +330,7 @@ function showFrame(){
   }
 }
 $('shot').addEventListener('error', function(){
+  if (this.src) failed.add(String(this.src).split('/').slice(-2).join('/'));
   this.style.display = 'none';
   $('noimg').classList.add('on');
 });
@@ -310,9 +347,8 @@ function readout(){
   const hl = GASR.horizonLabel(K, D.timing);
 
   if (!v || !rank){
-    $('verdict').textContent = PLACEHOLDER
-      ? 'Placeholder geometry carries no measurement, so nothing is compared here.'
-      : 'This export carries no measurement at ' + hl + ', so nothing is compared here.';
+    $('verdict').textContent = PLACEHOLDER ? STR.noMeasurePlaceholder
+                                           : fill(STR.noMeasureReal, K);
     $('tbl').innerHTML = '';
     $('scope').textContent = '';
     return;
@@ -335,12 +371,7 @@ function readout(){
     '<tr><th>' + hl + '</th><th class="n">of distance moved</th>' +
     '<th class="n">of tissue span</th></tr>' + rows;
 
-  $('scope').innerHTML =
-    'The first column is the error as a share of how far the tissue actually travelled: ' +
-    'at 100% a prediction is no better than not predicting. The second is the same error ' +
-    'against the width of the reconstructed tissue, for scale only &mdash; every method ' +
-    'here looks small against it. Averaged over ' + D.n_points + ' points of this one ' +
-    'sequence, in normalised units.';
+  $('scope').textContent = fill(STR.scope, K);
 }
 
 /* ── scene plumbing ─────────────────────────────────────────── */
@@ -350,20 +381,25 @@ function missingNote(){
   const gone = [];
   // An older demo_data.js loaded into this page can be missing a horizon entirely.
   // Draw what is there and name what is not, rather than throwing mid-render.
-  if (sc.layers.includes('gt')    && !pts(f,'gt'+K))   gone.push('the recorded outcome');
-  if (sc.layers.includes('pred')  && !pts(f,'pred'+K)) gone.push('the prediction');
-  if (sc.layers.includes('cv')    && !pts(f,'cv'+K))   gone.push('straight-line motion');
-  if (sc.layers.includes('sigma') && !f['sigma'+K])    gone.push('the sampled spread');
-  return gone.length
-    ? ' This export has no ' + gone.join(', ') + ' at ' + GASR.horizonLabel(K, null) + '.'
-    : '';
+  if (sc.layers.includes('gt')    && !pts(f,'gt'+K))   gone.push(STR.GAP_GT);
+  if (sc.layers.includes('pred')  && !pts(f,'pred'+K)) gone.push(STR.GAP_PRED);
+  if (sc.layers.includes('cv')    && !pts(f,'cv'+K))   gone.push(STR.GAP_CV);
+  if (sc.layers.includes('sigma') && !degenerate(K) && !f['sigma'+K]) gone.push(STR.GAP_SIGMA);
+  if (!gone.length) return '';
+  const list = gone.length > 1
+    ? gone.slice(0, -1).join(', ') + ' or ' + gone[gone.length - 1]
+    : gone[0];
+  return ' ' + STR.missingPrefix + list + fill(STR.missingSuffix, K);
 }
 
 function render(){
   const sc = SCENES[si];
   $('count').textContent = 'SCENE ' + (si+1) + ' OF ' + SCENES.length;
   $('title').textContent = sc.title;
-  $('body').textContent = sc.body + missingNote();
+  $('body').textContent = fill(sc.body, K) + missingNote();
+  const deg = degenerate(K);
+  $('warn').textContent = deg ? fill(STR.degenerate, K) : '';
+  $('warn').classList.toggle('on', deg);
   $('b_k1').classList.toggle('on', K === 1);
   $('b_k3').classList.toggle('on', K === 3);
   $('b_play').textContent = playing ? 'pause' : 'play';
@@ -373,11 +409,11 @@ function render(){
 function go(n){
   si = (n + SCENES.length) % SCENES.length;
   const h = SCENES[si].horizon;
-  if (h !== null && D.horizons.indexOf(h) !== -1) K = h;
+  if (h !== null && HORIZONS.indexOf(h) !== -1) K = h;
   render();
 }
 function setK(k){
-  if (D.horizons.indexOf(k) === -1) return;
+  if (HORIZONS.indexOf(k) === -1) return;
   K = k; render();
 }
 function step(){
@@ -430,11 +466,11 @@ addEventListener('resize', () => { resize(); draw(); });
 $('badge').className = PLACEHOLDER ? 'placeholder' : 'measured';
 $('badge').textContent = PLACEHOLDER ? 'PLACEHOLDER DATA' : 'MEASURED';
 $('meta').textContent = PLACEHOLDER
-  ? 'invented geometry for rehearsal — no measurement, no imagery'
+  ? STR.metaPlaceholder
   : D.video + ' · ' + D.n_points + ' points · ' + D.n_frames +
     ' held-out moments · checkpoint epoch ' + D.checkpoint_epoch;
 
-if (D.horizons.indexOf(K) === -1) K = D.horizons[0];
+if (HORIZONS.indexOf(K) === -1) K = HORIZONS[0];
 resize(); go(0);
 })();
 </script>

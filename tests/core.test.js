@@ -122,3 +122,33 @@ t.test('synth is shaped like the real payload and claims nothing', () => {
   a.strictEqual(d.frames[0].sigma1.length, d.n_points);
   a.strictEqual(d.frames[0].sigma3.length, d.n_points);
 });
+
+t.test('the strings table states no verdict and no physical unit', () => {
+  // The scene bodies and this table are both clinician-facing, so both are reviewed.
+  // The verdict pattern here is narrower than the one applied to scene bodies on
+  // purpose: STR.scope has to explain the metric with the words "no better than not
+  // predicting", which is a definition of the denominator, not a claim about a method.
+  // What must never appear is a method named as winning.
+  const units = /\b\d+(\.\d+)?\s*(mm|cm|millimet|ms|millisecond)/i;
+  const wins  = /\b(outperform|beats|best|superior|most accurate|wins|state of the art)\b/i;
+  a.ok(S.strings && Object.keys(S.strings).length, 'no strings table found');
+  for (const [k, v] of Object.entries(S.strings)) {
+    a.strictEqual(typeof v, 'string', k + ' is not a string');
+    a.doesNotMatch(v, units, k + ' invents a physical unit');
+    a.doesNotMatch(v, wins, k + ' states a verdict');
+  }
+});
+
+t.test('no clinician-facing string is left behind in the page', () => {
+  // I3: prose in index.html escapes the review that scenes.js exists to make possible.
+  // These are the fragments that were moved; if one reappears as a literal, this fails.
+  const fs2 = require('node:fs');
+  const page = fs2.readFileSync('demo/clinical/index.html', 'utf8');
+  for (const gone of ['Placeholder geometry carries no measurement',
+                      'Spread across sampled futures',
+                      'What actually happened',
+                      'invented geometry for rehearsal',
+                      'The first column is the error']) {
+    a.ok(!page.includes(gone), 'moved back into the page: ' + gone);
+  }
+});

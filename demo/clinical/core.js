@@ -85,6 +85,20 @@ GASR.rankAtHorizon = function (meanError, k) {
   return out.sort((x, y) => x.err - y.err);
 };
 
+// Two errors this close are the same number, not a ranking. The case is not
+// hypothetical: where the calibration fit returns alpha = 0 the exporter states that
+// pred{k} is EXACTLY cv{k}, and its own run has printed
+// "k=1  ours 0.47478   const-vel 0.47478". A stable sort over METHOD_LABELS puts ours
+// first on equal keys, so without this the page announces the model as the closest
+// prediction at a horizon where its prediction IS the straight-line baseline -- a
+// verdict computed at runtime and still wrong, which is the one outcome the
+// no-authored-verdict rule exists to prevent.
+//
+// The threshold is numerical indistinguishability only. A wider one would be a
+// significance threshold, and there is nothing in this pipeline that would justify a
+// particular value for it.
+const TIE_REL = 1e-6;
+
 GASR.verdict = function (meanError, k) {
   const rank = GASR.rankAtHorizon(meanError, k);
   if (!rank) return null;
@@ -93,11 +107,21 @@ GASR.verdict = function (meanError, k) {
   const label = GASR.METHOD_LABELS[winner.key];
   const ours = rank.find(r => r.key === 'ours');
   const still = rank.find(r => r.key === 'still');
-  const oursBeatsAll = winner.key === 'ours';
+
+  const scale = Math.max.apply(null, rank.map(r => Math.abs(r.err))) || 1;
+  const level = rank.filter(r => Math.abs(r.err - winner.err) <= TIE_REL * scale);
+  const tied = level.length > 1;
+
+  const oursBeatsAll = winner.key === 'ours' && !tied;
   const oursBeatsStatic = (ours && still) ? ours.err < still.err : null;
 
   let text;
-  if (oursBeatsAll) {
+  if (tied) {
+    const names = level.map(r => GASR.METHOD_LABELS[r.key]);
+    text = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are ` +
+           `numerically indistinguishable ${GASR.horizonLabel(k, null)}: to the ` +
+           `precision reported here they are the same prediction.`;
+  } else if (oursBeatsAll) {
     text = `${label} is the closest prediction ${GASR.horizonLabel(k, null)}.`;
   } else {
     // Say it plainly. Standing in front of an examination panel claiming a win the
@@ -112,6 +136,8 @@ GASR.verdict = function (meanError, k) {
     winner: winner.key,
     winnerLabel: label,
     text: text,
+    tied: tied,
+    tiedWith: level.map(r => r.key),
     oursBeatsAll: oursBeatsAll,
     oursBeatsStatic: oursBeatsStatic,
   };

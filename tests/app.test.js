@@ -41,75 +41,211 @@ t.test('the research viewer is untouched by this task', () => {
   a.doesNotMatch(fs.readFileSync('demo/index.html','utf8'), /clinical/);
 });
 
-// ── Boot smoke test ──────────────────────────────────────────────────────────
-// The plan's Step 4 asks for a human to double-click the file and confirm the scenes
-// advance and the console is clean. That cannot run here, so this executes the page's
-// own inline script against a stub DOM instead and walks every scene at every horizon.
-// It will not catch a layout or colour mistake, but it does catch the failures that
-// would end the demonstration in the room: a syntax error, a mistyped element id, or an
-// exception thrown mid-render. A human still has to look at it.
-function stubDom(){
-  const noop = () => {};
-  const ctx = new Proxy({}, { get: (o,k) => (k in o ? o[k] : noop), set: (o,k,v) => (o[k]=v, true) });
-  // Only ids that genuinely appear in the markup resolve. A stub that fabricates an
-  // element for any string cannot fail on a mistyped id, which is one of the two
-  // failures this test exists to catch.
-  const known = new Set([...html.matchAll(/id=["']([^"']+)["']/g)].map(m => m[1]));
-  const made = new Map();
-  const el = (id) => {
-    if (!known.has(id)) return null;          // what the browser returns
-    if (made.has(id)) return made.get(id);
-    const e = {
-      id, style:{}, textContent:'', innerHTML:'', className:'',
-      classList:{ add:noop, remove:noop, toggle:noop, contains:()=>false },
-      addEventListener:noop, removeAttribute:noop, setAttribute:noop,
-      setPointerCapture:noop, getContext:()=>ctx,
-      getBoundingClientRect:()=>({width:1280, height:720}),
-      width:0, height:0,
-    };
-    e.parentElement = { getBoundingClientRect: () => ({width:1280, height:720}) };
-    made.set(id, e);
-    return e;
-  };
-  return { el, document:{ getElementById: el } };
-}
 
-t.test('the page boots and every scene renders at every horizon', () => {
+// ── A harness that can boot the page against REAL-mode payloads ───────────────
+// The previous version only ever booted placeholder data, so Review Focus 3 and 5 --
+// both assigned to this task -- had no automated coverage at all. This one injects
+// window.DEMO_DATA, records classList/src/textContent transitions, and exposes the
+// keyboard handler, the <img> error listener and the playback tick, so the degradation
+// paths can be driven rather than reasoned about.
+function harness(payload){
+  const known = new Set([...html.matchAll(/id=["']([^"']+)["']/g)].map(m => m[1]));
+  const arcs = [];
+  const ctx = new Proxy({}, {
+    get: (o, k) => (k === 'arc' ? ((x,y,r) => arcs.push(r)) : (k in o ? o[k] : () => {})),
+    set: (o, k, v) => (o[k] = v, true),
+  });
+  const made = new Map(), listeners = {};
+
+  function mk(id){
+    const cls = new Set();
+    const e = {
+      id, style:{}, textContent:'', innerHTML:'', className:'', width:0, height:0, _src:null,
+      classList:{
+        add: c => cls.add(c), remove: c => cls.delete(c),
+        toggle: (c, on) => (on === undefined ? (cls.has(c) ? cls.delete(c) : cls.add(c))
+                                             : (on ? cls.add(c) : cls.delete(c))),
+        contains: c => cls.has(c),
+      },
+      _cls: cls,
+      addEventListener: (t, fn) => { (listeners[id] = listeners[id] || {})[t] = fn; },
+      removeAttribute: at => { if (at === 'src') e._src = null; },
+      setAttribute: () => {}, setPointerCapture: () => {},
+      getContext: () => ctx,
+      getBoundingClientRect: () => ({width:1280, height:720}),
+    };
+    Object.defineProperty(e, 'src', { get: () => e._src, set: v => { e._src = v; } });
+    e.parentElement = { getBoundingClientRect: () => ({width:1280, height:720}) };
+    return e;
+  }
+
+  const document = { getElementById: id => {
+    if (!known.has(id)) return null;                 // what the browser returns
+    if (!made.has(id)) made.set(id, mk(id));
+    return made.get(id);
+  }};
+
+  const win = { synth: require('../demo/clinical/synth.js'), devicePixelRatio: 1 };
+  if (payload) win.DEMO_DATA = payload;
+
+  const keys = [];
+  let tick = null;
   const src = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
     .map(m => m[1]).filter(s => s.includes('SCENES')).pop();
-  a.ok(src, 'inline script not found');
+  if (!src) throw new Error('inline script not found');
 
-  const dom = stubDom();
-  const keyHandlers = [];
-  const win = {
-    synth: require('../demo/clinical/synth.js'),
-    devicePixelRatio: 1,
+  new Function('GASR','SCENES','window','document','addEventListener',
+               'setInterval','clearInterval', src)(
+    require('../demo/clinical/core.js'),
+    require('../demo/clinical/scenes.js'),
+    win, document,
+    (t, fn) => { if (t === 'keydown') keys.push(fn); },
+    fn => { tick = fn; return 1; },
+    () => { tick = null; });
+
+  if (!keys.length) throw new Error('no keyboard handler registered');
+  return {
+    el: id => document.getElementById(id),
+    key: k => keys[0]({ key: k, preventDefault(){} }),
+    fire: (id, type) => listeners[id] && listeners[id][type] &&
+                        listeners[id][type].call(document.getElementById(id)),
+    tick: () => tick && tick(),
+    arcs,
   };
-  const addEventListener = (type, fn) => { if (type === 'keydown') keyHandlers.push(fn); };
+}
 
-  const run = new Function('GASR','SCENES','window','document','addEventListener',
-                           'setInterval','clearInterval', src);
-  run(require('../demo/clinical/core.js'),
-      require('../demo/clinical/scenes.js'),
-      win, dom.document, addEventListener, () => 0, () => {});
-
-  a.strictEqual(keyHandlers.length, 1, 'no keyboard handler was registered');
-
-  // Walk forward through every scene, toggling the horizon at each one. Any throw here
-  // is a scene that would go blank on the projector.
-  for (let i = 0; i < 8; i++){
-    for (const key of ['1','3','r',' ']) keyHandlers[0]({key, preventDefault(){}});
-    keyHandlers[0]({key:'ArrowRight', preventDefault(){}});
+// A payload shaped like the real export: measured, with a motion denominator and the
+// calibration metadata Task 4 added.
+function realPayload(over){
+  const d = require('../demo/clinical/synth.js')();
+  d.synthetic = false;
+  d.video = 'workspace_video4';
+  d.checkpoint_epoch = 100;
+  d.mean_error = { '1': {ours:0.00611, cv:0.00590, still:0.00944},
+                   '3': {ours:0.02000, cv:0.02272, still:0.02255} };
+  d.motion = { '1': 0.01000, '3': 0.02400 };
+  d.timing = { timing_ok:false };
+  d.frame_files = {};
+  d.degenerate_horizons = [];
+  Object.assign(d, over || {});
+  return d;
+}
+function withFrameFiles(d){
+  d.frame_files = {};
+  for (const f of d.frames){
+    for (const i of [f.img, f.img1, f.img3])
+      if (i != null) d.frame_files[String(i)] = 'frames/' + String(i).padStart(5,'0') + '.jpg';
   }
-  keyHandlers[0]({key:'ArrowLeft', preventDefault(){}});
+  return d;
+}
+const SCENE_IX = {sees:0, reconstructs:1, why:2, prediction:3, baselines:4, uncertainty:5, standing:6};
+function goTo(h, id){ for (let i = 0; i < SCENE_IX[id]; i++) h.key('ArrowRight'); return h; }
+
+t.test('the page boots and every scene renders at every horizon', () => {
+  const h = harness(null);
+  for (let i = 0; i < 8; i++){
+    for (const k of ['1','3','r',' ']) h.key(k);
+    h.key('ArrowRight');
+  }
+  h.key('ArrowLeft');
 });
 
 t.test('placeholder mode never renders a verdict', () => {
-  const synth = require('../demo/clinical/synth.js');
   const G = require('../demo/clinical/core.js');
-  const d = synth();
+  const d = require('../demo/clinical/synth.js')();
   for (const k of d.horizons){
     a.strictEqual(G.verdict(d.mean_error, k), null);
     a.strictEqual(G.rankAtHorizon(d.mean_error, k), null);
   }
+});
+
+// ── C3 ───────────────────────────────────────────────────────────────────────
+t.test('real endoscopic frames and the payload cannot be committed by accident', () => {
+  const gi = fs.readFileSync('.gitignore', 'utf8');
+  a.match(gi, /demo\/clinical\/frames/, 'frames/ holds real surgical stills');
+  a.match(gi, /demo\/clinical\/demo_data\.js/);
+});
+
+// ── C2 ───────────────────────────────────────────────────────────────────────
+t.test('a degenerate horizon draws no halo labelled as sampled spread', () => {
+  const d = realPayload({ degenerate_horizons: ['1'] });
+  for (const f of d.frames){ f.sigma1 = f.sigma1.map(() => 0); f.pred1 = f.cv1.slice(); }
+  const h = harness(d);
+  goTo(h, 'uncertainty');
+  h.key('1');
+  a.doesNotMatch(h.el('legend').innerHTML, /spread across sampled futures/i,
+                 'a zero spread must not be presented as a measured one');
+  a.match(h.el('warn').textContent, /\S/, 'the degenerate horizon must be stated on screen');
+});
+
+// ── C1 ───────────────────────────────────────────────────────────────────────
+t.test('an exact tie is reported as indistinguishable, not as a win for ours', () => {
+  const G = require('../demo/clinical/core.js');
+  const v = G.verdict({ '1': {ours:0.47478, cv:0.47478, still:0.51380} }, 1);
+  a.strictEqual(v.tied, true);
+  a.strictEqual(v.oursBeatsAll, false);
+  a.doesNotMatch(v.text, /closest prediction/i);
+  a.match(v.text, /indistinguishable/i);
+});
+
+t.test('a real win is still reported as a win', () => {
+  const G = require('../demo/clinical/core.js');
+  const v = G.verdict({ '3': {ours:0.02000, cv:0.02272, still:0.02255} }, 3);
+  a.strictEqual(v.tied, false);
+  a.strictEqual(v.oursBeatsAll, true);
+  a.match(v.text, /closest/i);
+});
+
+// ── I1 ───────────────────────────────────────────────────────────────────────
+t.test('a frame that failed to load stays hidden across scene changes and ticks', () => {
+  const h = harness(withFrameFiles(realPayload()));
+  a.ok(h.el('shot').src, 'scene 1 should have tried to load a still');
+  h.fire('shot', 'error');
+  a.strictEqual(h.el('noimg')._cls.has('on'), true);
+  h.key('ArrowRight');
+  a.strictEqual(h.el('noimg')._cls.has('on'), true,
+                'the panel must not be torn down on the next scene');
+  h.tick();
+  a.strictEqual(h.el('noimg')._cls.has('on'), true,
+                'nor re-exposed nine times a second during playback');
+});
+
+// ── I2 ───────────────────────────────────────────────────────────────────────
+t.test('a frame-only scene clears the legend and does not split the stage', () => {
+  const h = harness(realPayload());
+  goTo(h, 'standing');
+  a.match(h.el('legend').innerHTML, /\S/, 'scene 7 should have a legend');
+  h.key('ArrowRight');                               // wraps to scene 1, frame only
+  a.strictEqual(h.el('legend').innerHTML, '',
+                'a stale legend must not float over an empty stage');
+  a.strictEqual(h.el('stage')._cls.has('withframe'), false);
+});
+
+// ── I3 ───────────────────────────────────────────────────────────────────────
+t.test('a missing horizon produces a grammatical sentence', () => {
+  const d = realPayload();
+  for (const f of d.frames){ delete f.gt3; delete f.sigma3; }
+  const h = harness(d);
+  goTo(h, 'prediction');
+  const body = h.el('body').textContent;
+  a.doesNotMatch(body, /\bno the\b/i, 'articles doubled up');
+  a.match(body, /recorded outcome/i);
+});
+
+// ── M1, promoted ─────────────────────────────────────────────────────────────
+t.test('scene prose states the horizon that is actually selected', () => {
+  const h = harness(realPayload());
+  goTo(h, 'prediction');
+  a.match(h.el('body').textContent, /3 frames ahead/);
+  h.key('1');
+  a.match(h.el('body').textContent, /1 frame ahead/);
+  a.doesNotMatch(h.el('body').textContent, /three frames/i);
+});
+
+// ── M4, promoted ─────────────────────────────────────────────────────────────
+t.test('a payload with no horizons list still renders instead of going blank', () => {
+  const d = realPayload();
+  delete d.horizons;
+  const h = harness(d);
+  a.match(h.el('title').textContent, /\S/);
 });

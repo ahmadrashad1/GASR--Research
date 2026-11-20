@@ -59,7 +59,7 @@ const SCENES = [
     title: 'The prediction',
     body:
       'Given only the frames before this moment, the model proposes where every ' +
-      'tracked point will be three frames later. White is what actually happened; ' +
+      'tracked point will be {horizon}. White is what actually happened; ' +
       'red is the model’s answer. These are held-out frames — this sequence’s ' +
       'later portion was never used to train the model.',
     layers: ['ctx', 'gt', 'pred'],
@@ -103,6 +103,52 @@ const SCENES = [
     horizon: null,
   },
 ];
+
+// Everything else a clinician reads. These lived in index.html, which meant the prose
+// review covered six of the sentences that reach the projector and not the rest -- and
+// the one nobody reviewed read "This export has no the recorded outcome at 3 frames
+// ahead." They are attached to the array rather than exported separately so that
+// scenes.js keeps its single-import contract.
+//
+// {horizon} is substituted with the selected horizon at render time. GAP_* are noun
+// phrases WITHOUT articles, because they are composed into "This export has no ...".
+SCENES.strings = {
+  noImageTitle: 'Endoscopic imagery comes from the export',
+  noImageBody:
+    'No frames were found beside this page, so only the video stills are missing.',
+  noImageBodyWithGeometry:
+    'No frames were found beside this page. The geometry is complete; only the video ' +
+    'stills are missing.',
+
+  noMeasurePlaceholder:
+    'Placeholder geometry carries no measurement, so nothing is compared here.',
+  noMeasureReal:
+    'This export carries no measurement at {horizon}, so nothing is compared here.',
+
+  degenerate:
+    'At {horizon} the calibration fit gave the model no weight, so its prediction here ' +
+    'is the straight-line one, point for point. The sampled spread is zero and is not ' +
+    'drawn: there is no uncertainty to report, rather than none found.',
+
+  legendGt: 'What actually happened',
+  legendSigma: 'Spread across sampled futures',
+
+  metaPlaceholder: 'invented geometry for rehearsal — no measurement, no imagery',
+
+  scope:
+    'The first column is the error as a share of how far the tissue actually ' +
+    'travelled: at 100% a prediction is no better than not predicting. The second is ' +
+    'the same error against the width of the reconstructed tissue, for scale only — ' +
+    'every method here looks small against it. Averaged over {points} points of this ' +
+    'one sequence, in normalised units.',
+
+  missingPrefix: 'This export has no ',
+  missingSuffix: ' at {horizon}.',
+  GAP_GT: 'recorded outcome',
+  GAP_PRED: 'prediction',
+  GAP_CV: 'straight-line comparison',
+  GAP_SIGMA: 'sampled spread',
+};
 
 if (typeof module !== 'undefined' && module.exports) module.exports = SCENES;
 if (typeof window !== 'undefined') window.SCENES = SCENES;
