@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GASR — predicting tissue motion</title>
+<style>
+:root{
+  --crimson:#5C0A0A; --blood:#D62828; --white:#F5F5F7;
+  --flesh:#C98276; --dim:#75757E;
+  --bg:#0B0B0D; --panel:#131317; --line:rgba(245,245,247,.13);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--white);
+  font:17px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overflow:hidden;
+}
+/* Sized for a projector at the back of a room, not a laptop at reading distance. */
+header{
+  display:flex; align-items:baseline; gap:18px; flex-wrap:wrap;
+  padding:14px 26px; border-bottom:1px solid var(--line); background:var(--panel);
+}
+header h1{margin:0; font-size:19px; letter-spacing:.14em; text-transform:uppercase; font-weight:650}
+header h1 span{color:var(--blood)}
+#meta{color:var(--dim); font-size:14px}
+#badge{
+  margin-left:auto; padding:5px 13px; border-radius:3px; font-size:13px;
+  font-weight:700; letter-spacing:.11em;
+}
+#badge.measured{background:var(--crimson); color:var(--white)}
+#badge.placeholder{background:#3A3A10; color:#F2E27A; border:1px solid #6E6420}
+
+main{display:grid; grid-template-columns:minmax(380px,34%) 1fr; height:calc(100% - 118px)}
+#side{padding:28px 30px; overflow-y:auto; border-right:1px solid var(--line)}
+#count{color:var(--blood); font-size:14px; letter-spacing:.17em; font-weight:700}
+#title{margin:7px 0 16px; font-size:33px; line-height:1.15; font-weight:680}
+#body{font-size:19px; color:#D8D8DE; margin:0 0 22px}
+
+#readout{border-top:1px solid var(--line); padding-top:17px}
+#verdict{font-size:18px; margin:0 0 14px}
+table{border-collapse:collapse; width:100%; font-size:16px}
+th,td{text-align:left; padding:6px 9px 6px 0}
+th{color:var(--dim); font-weight:600; font-size:13px; letter-spacing:.07em; text-transform:uppercase}
+td.n{font-variant-numeric:tabular-nums; text-align:right}
+.swatch{display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:8px}
+#scope{color:var(--dim); font-size:13.5px; margin-top:14px}
+
+#stage{position:relative; display:grid; grid-template-columns:1fr; min-width:0}
+#stage.withframe{grid-template-columns:1fr 1fr}
+#framebox{position:relative; border-right:1px solid var(--line); display:none}
+#stage.withframe #framebox{display:block}
+#shot{width:100%; height:100%; object-fit:contain; display:block}
+#noimg{
+  position:absolute; inset:0; display:none; place-content:center; text-align:center;
+  padding:40px; color:var(--dim); font-size:16px;
+}
+#noimg.on{display:grid}
+#noimg b{color:var(--white); display:block; margin-bottom:9px; font-size:18px}
+#cvwrap{position:relative; min-width:0}
+canvas{display:block; width:100%; height:100%}
+#legend{
+  position:absolute; left:18px; bottom:16px; display:flex; gap:17px;
+  flex-wrap:wrap; font-size:14.5px; background:rgba(11,11,13,.72);
+  padding:8px 13px; border-radius:4px;
+}
+#hint{position:absolute; right:18px; top:16px; color:var(--dim); font-size:13px}
+
+footer{
+  display:flex; align-items:center; gap:10px; padding:12px 26px;
+  border-top:1px solid var(--line); background:var(--panel);
+}
+button{
+  background:#1E1E24; color:var(--white); border:1px solid var(--line);
+  padding:8px 15px; border-radius:4px; font-size:15px; cursor:pointer; font-family:inherit;
+}
+button:hover{border-color:var(--blood)}
+button.on{background:var(--crimson); border-color:var(--blood)}
+kbd{
+  font:12px ui-monospace,monospace; background:#000; border:1px solid var(--line);
+  border-radius:3px; padding:1px 5px; color:var(--dim);
+}
+#right{margin-left:auto; color:var(--dim); font-size:13.5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GASR<span>.</span> predicting tissue motion</h1>
+  <div id="meta"></div>
+  <div id="badge"></div>
+</header>
+
+<main>
+  <section id="side">
+    <div id="count"></div>
+    <h2 id="title"></h2>
+    <p id="body"></p>
+    <div id="readout">
+      <p id="verdict"></p>
+      <table id="tbl"></table>
+      <div id="scope"></div>
+    </div>
+  </section>
+
+  <section id="stage">
+    <div id="framebox">
+      <img id="shot" alt="endoscopic frame from the exported sequence">
+      <!-- Shown whenever the imagery is not on disk: placeholder mode always, and real
+           data whose export ran without the frames directory. A broken-image icon in
+           front of an examination panel is the failure this panel exists to prevent. -->
+      <div id="noimg">
+        <div>
+          <b>Endoscopic imagery comes from the export</b>
+          No frames were found beside this page. The geometry on the right is complete;
+          only the video stills are missing.
+        </div>
+      </div>
+    </div>
+    <div id="cvwrap">
+      <canvas id="cv"></canvas>
+      <div id="legend"></div>
+      <div id="hint">drag to orbit &middot; scroll to zoom</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <button id="b_prev">&larr; back</button>
+  <button id="b_next">next &rarr;</button>
+  <button id="b_play">play</button>
+  <button id="b_k1">1 frame</button>
+  <button id="b_k3">3 frames</button>
+  <button id="b_reset">reset view</button>
+  <div id="right">
+    <kbd>&larr;</kbd><kbd>&rarr;</kbd> scene &nbsp; <kbd>space</kbd> play &nbsp;
+    <kbd>1</kbd><kbd>3</kbd> horizon &nbsp; <kbd>R</kbd> view
+  </div>
+</footer>
+
+<!-- Classic scripts only. A page opened by double-clicking runs on the file:// origin,
+     where module scripts and local data requests are both refused by the browser. A
+     classic <script src> is the one load path that still works, which is why the data
+     is delivered as a script that assigns window.DEMO_DATA rather than as JSON. -->
+<script src="core.js"></script>
+<script src="scenes.js"></script>
+<script src="synth.js"></script>
+<!-- Optional. Absent before Module 9 has been exported, and its onerror is what keeps
+     the page from dying on the missing file. -->
+<script src="demo_data.js" onerror="window.__nodata=true"></script>
+
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+
+const COLOUR = {
+  gt:    '#F5F5F7',
+  pred:  '#D62828',
+  cv:    '#C98276',
+  still: '#75757E',
+  sigma: '#5C0A0A',
+};
+const SERIES_LABEL = {
+  gt: 'What actually happened',
+  pred: GASR.METHOD_LABELS.ours,
+  cv: GASR.METHOD_LABELS.cv,
+  still: GASR.METHOD_LABELS.still,
+};
+
+// Real export if one loaded, invented geometry otherwise. There is no third state and
+// no silent fallback: the badge says which, on every screen.
+const REAL = (typeof window.DEMO_DATA !== 'undefined' && window.DEMO_DATA) ? window.DEMO_DATA : null;
+const D = REAL || window.synth();
+const PLACEHOLDER = !REAL || D.synthetic === true;
+
+let si = 0, frame = 0, K = 3, playing = false;
+let yaw = 0.6, pitch = 0.25, zoom = 1;
+
+// Points arrive flat and are unpacked once per frame per series, not once per draw.
+const cache = new Map();
+function pts(f, key){
+  const id = f.t + ':' + key;
+  if (cache.has(id)) return cache.get(id);
+  const flat = f[key];
+  const v = (flat && flat.length) ? GASR.unflat(flat, D.n_points) : null;
+  cache.set(id, v);
+  return v;
+}
+
+/* ── projection ─────────────────────────────────────────────── */
+let W = 0, H = 0, DPR = 1;
+const cv = $('cv'), g = cv.getContext('2d');
+
+function project(p){
+  const c = D.centre, s = 1 / (D.radius || 1);
+  let x = (p[0]-c[0])*s, y = (p[1]-c[1])*s, z = (p[2]-c[2])*s;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const x1 = x*cy - z*sy, z1 = x*sy + z*cy;
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const y1 = y*cp - z1*sp, z2 = y*sp + z1*cp;
+  const k = Math.min(W,H) * 0.40 * zoom;
+  return [W/2 + x1*k, H/2 - y1*k, z2];
+}
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const r = cv.parentElement.getBoundingClientRect();
+  W = r.width; H = r.height;
+  cv.width = W*DPR; cv.height = H*DPR;
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* ── drawing ────────────────────────────────────────────────── */
+function dot(p, colour, r){
+  g.beginPath(); g.arc(p[0], p[1], r, 0, 6.2832);
+  g.fillStyle = colour; g.fill();
+}
+
+function draw(){
+  if (!W) resize();
+  g.clearRect(0,0,W,H);
+  const sc = SCENES[si], f = D.frames[frame];
+  if (!f) return;
+
+  const want = sc.layers;
+  const series = {};
+  if (want.includes('ctx'))   series.ctx   = pts(f, 'ctx');
+  if (want.includes('gt'))    series.gt    = pts(f, 'gt' + K);
+  if (want.includes('pred'))  series.pred  = pts(f, 'pred' + K);
+  if (want.includes('cv'))    series.cv    = pts(f, 'cv' + K);
+  if (want.includes('still')) series.still = pts(f, 'ctx');   // freeze in place
+  const sigma = want.includes('sigma') ? f['sigma' + K] : null;
+
+  // Depth order from whichever series is present, so the painter's algorithm still
+  // works when a horizon is missing some of them.
+  const ref = series.gt || series.pred || series.ctx || series.cv;
+  if (!ref) return;
+  const depth = ref.map((p,i) => [project(p)[2], i]).sort((a,b) => a[0]-b[0]);
+
+  const sMax = sigma ? Math.max.apply(null, sigma) : 0;
+  const R = Math.max(2.2, Math.min(W,H) / 190);
+
+  for (const d of depth){
+    const i = d[1];
+    if (sigma && series.pred){
+      const p = project(series.pred[i]);
+      const rr = R*1.1 + R*5.5 * (sigma[i] / (sMax || 1));
+      g.globalAlpha = 0.33; dot(p, COLOUR.sigma, rr); g.globalAlpha = 1;
+    }
+    if (series.gt && series.pred){
+      const a = project(series.gt[i]), b = project(series.pred[i]);
+      g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b[0],b[1]);
+      g.strokeStyle = 'rgba(245,245,247,.26)'; g.lineWidth = 1.2; g.stroke();
+    }
+    if (series.ctx && !series.still) dot(project(series.ctx[i]), 'rgba(245,245,247,.30)', R*0.75);
+    if (series.still) dot(project(series.still[i]), COLOUR.still, R*0.9);
+    if (series.cv)    dot(project(series.cv[i]),    COLOUR.cv,    R);
+    if (series.gt)    dot(project(series.gt[i]),    COLOUR.gt,    R);
+    if (series.pred)  dot(project(series.pred[i]),  COLOUR.pred,  R);
+  }
+
+  const items = [];
+  if (series.gt)    items.push(['gt', SERIES_LABEL.gt]);
+  if (series.pred)  items.push(['pred', SERIES_LABEL.pred]);
+  if (series.cv)    items.push(['cv', SERIES_LABEL.cv]);
+  if (series.still) items.push(['still', SERIES_LABEL.still]);
+  if (sigma)        items.push(['sigma', 'Spread across sampled futures']);
+  $('legend').innerHTML = items.map(it =>
+    '<span><i class="swatch" style="background:' + COLOUR[it[0]] + '"></i>' + it[1] + '</span>'
+  ).join('');
+}
+
+/* ── the endoscopic still ───────────────────────────────────── */
+function showFrame(){
+  const sc = SCENES[si], f = D.frames[frame];
+  const wants = sc.layers.includes('frame');
+  $('stage').classList.toggle('withframe', wants);
+  if (!wants) return;
+
+  const files = D.frame_files || {};
+  const idx = (f && f.img != null) ? String(f.img) : null;
+  const name = idx != null ? files[idx] : null;
+  if (name){
+    $('noimg').classList.remove('on');
+    $('shot').style.display = 'block';
+    $('shot').src = name;
+  } else {
+    // Placeholder mode, or a real export produced without its frames directory.
+    $('shot').removeAttribute('src');
+    $('shot').style.display = 'none';
+    $('noimg').classList.add('on');
+  }
+}
+$('shot').addEventListener('error', function(){
+  this.style.display = 'none';
+  $('noimg').classList.add('on');
+});
+
+/* ── the readout: every comparative sentence computed, none written ── */
+function readout(){
+  const sc = SCENES[si];
+  const show = sc.id === 'baselines' || sc.id === 'standing';
+  $('readout').style.display = show ? 'block' : 'none';
+  if (!show) return;
+
+  const v = GASR.verdict(D.mean_error, K);
+  const rank = GASR.rankAtHorizon(D.mean_error, K);
+  const hl = GASR.horizonLabel(K, D.timing);
+
+  if (!v || !rank){
+    $('verdict').textContent = PLACEHOLDER
+      ? 'Placeholder geometry carries no measurement, so nothing is compared here.'
+      : 'This export carries no measurement at ' + hl + ', so nothing is compared here.';
+    $('tbl').innerHTML = '';
+    $('scope').textContent = '';
+    return;
+  }
+
+  $('verdict').textContent = v.text;
+
+  const motion = (D.motion && D.motion[String(K)] != null) ? D.motion[String(K)] : null;
+  const rows = rank.map(r => {
+    const skill = GASR.skillPercent(r.err, motion);
+    const span  = GASR.spanPercent(r.err, D.span);
+    return '<tr><td><i class="swatch" style="background:' +
+      (r.key === 'ours' ? COLOUR.pred : r.key === 'cv' ? COLOUR.cv : COLOUR.still) +
+      '"></i>' + GASR.METHOD_LABELS[r.key] + '</td><td class="n">' +
+      (skill === null ? '&mdash;' : skill.toFixed(0) + '%') + '</td><td class="n">' +
+      (span === null ? '&mdash;' : span.toFixed(2) + '%') + '</td></tr>';
+  }).join('');
+
+  $('tbl').innerHTML =
+    '<tr><th>' + hl + '</th><th class="n">of distance moved</th>' +
+    '<th class="n">of tissue span</th></tr>' + rows;
+
+  $('scope').innerHTML =
+    'The first column is the error as a share of how far the tissue actually travelled: ' +
+    'at 100% a prediction is no better than not predicting. The second is the same error ' +
+    'against the width of the reconstructed tissue, for scale only &mdash; every method ' +
+    'here looks small against it. Averaged over ' + D.n_points + ' points of this one ' +
+    'sequence, in normalised units.';
+}
+
+/* ── scene plumbing ─────────────────────────────────────────── */
+function missingNote(){
+  const sc = SCENES[si], f = D.frames[frame];
+  if (!f) return '';
+  const gone = [];
+  // An older demo_data.js loaded into this page can be missing a horizon entirely.
+  // Draw what is there and name what is not, rather than throwing mid-render.
+  if (sc.layers.includes('gt')    && !pts(f,'gt'+K))   gone.push('the recorded outcome');
+  if (sc.layers.includes('pred')  && !pts(f,'pred'+K)) gone.push('the prediction');
+  if (sc.layers.includes('cv')    && !pts(f,'cv'+K))   gone.push('straight-line motion');
+  if (sc.layers.includes('sigma') && !f['sigma'+K])    gone.push('the sampled spread');
+  return gone.length
+    ? ' This export has no ' + gone.join(', ') + ' at ' + GASR.horizonLabel(K, null) + '.'
+    : '';
+}
+
+function render(){
+  const sc = SCENES[si];
+  $('count').textContent = 'SCENE ' + (si+1) + ' OF ' + SCENES.length;
+  $('title').textContent = sc.title;
+  $('body').textContent = sc.body + missingNote();
+  $('b_k1').classList.toggle('on', K === 1);
+  $('b_k3').classList.toggle('on', K === 3);
+  $('b_play').textContent = playing ? 'pause' : 'play';
+  showFrame(); readout(); draw();
+}
+
+function go(n){
+  si = (n + SCENES.length) % SCENES.length;
+  const h = SCENES[si].horizon;
+  if (h !== null && D.horizons.indexOf(h) !== -1) K = h;
+  render();
+}
+function setK(k){
+  if (D.horizons.indexOf(k) === -1) return;
+  K = k; render();
+}
+function step(){
+  frame = (frame + 1) % D.n_frames;
+  showFrame(); draw();
+}
+
+let timer = null;
+function play(on){
+  playing = on;
+  if (timer) { clearInterval(timer); timer = null; }
+  if (on) timer = setInterval(step, 110);
+  $('b_play').textContent = playing ? 'pause' : 'play';
+}
+
+/* ── controls, live in every scene ──────────────────────────── */
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') { go(si+1); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft') { go(si-1); e.preventDefault(); }
+  else if (e.key === ' ') { play(!playing); e.preventDefault(); }
+  else if (e.key === '1') setK(1);
+  else if (e.key === '3') setK(3);
+  else if (e.key === 'r' || e.key === 'R') { yaw=0.6; pitch=0.25; zoom=1; draw(); }
+});
+$('b_prev').onclick  = () => go(si-1);
+$('b_next').onclick  = () => go(si+1);
+$('b_play').onclick  = () => play(!playing);
+$('b_k1').onclick    = () => setK(1);
+$('b_k3').onclick    = () => setK(3);
+$('b_reset').onclick = () => { yaw=0.6; pitch=0.25; zoom=1; draw(); };
+
+let drag = null;
+cv.addEventListener('pointerdown', e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerup',   e => { drag = null; });
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  yaw   += (e.clientX - drag[0]) * 0.008;
+  pitch += (e.clientY - drag[1]) * 0.008;
+  pitch = Math.max(-1.5, Math.min(1.5, pitch));
+  drag = [e.clientX, e.clientY];
+  draw();
+});
+cv.addEventListener('wheel', e => {
+  zoom = Math.max(0.35, Math.min(4, zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+  e.preventDefault(); draw();
+}, {passive:false});
+addEventListener('resize', () => { resize(); draw(); });
+
+/* ── boot ───────────────────────────────────────────────────── */
+$('badge').className = PLACEHOLDER ? 'placeholder' : 'measured';
+$('badge').textContent = PLACEHOLDER ? 'PLACEHOLDER DATA' : 'MEASURED';
+$('meta').textContent = PLACEHOLDER
+  ? 'invented geometry for rehearsal — no measurement, no imagery'
+  : D.video + ' · ' + D.n_points + ' points · ' + D.n_frames +
+    ' held-out moments · checkpoint epoch ' + D.checkpoint_epoch;
+
+if (D.horizons.indexOf(K) === -1) K = D.horizons[0];
+resize(); go(0);
+})();
+</script>
+</body>
+</html>
