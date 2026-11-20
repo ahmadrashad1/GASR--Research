@@ -13,7 +13,7 @@ produced so far and emits `generated.tex`, containing both LaTeX tables and a se
 
 Usage:  python3 make_tables.py [--drive /path/to/EndoGaussian] [--out generated.tex]
 """
-import argparse, json, math, os, sys
+import argparse, json, math, os, re, sys
 
 AP = argparse.ArgumentParser()
 AP.add_argument('--drive', default=os.environ.get('DRIVE_BASE', ''),
@@ -70,8 +70,46 @@ def placeholder(label, caption, note):
     W('')
 
 
+_EMITTED = {}
+
+
 def macro(name, value):
+    # Two \newcommand lines for one name abort the LaTeX build outright. That is easy
+    # to introduce while wiring a macro to a live source without retiring the
+    # transcribed one that fed it before, so it fails here, loudly, with both values.
+    if name in _EMITTED:
+        raise SystemExit(
+            f'\n  DUPLICATE MACRO: \\{name} would be defined twice\n'
+            f'    first:  {_EMITTED[name]}\n'
+            f'    second: {value}\n'
+            '    \\newcommand twice on one name aborts the LaTeX build. Retire the\n'
+            '    older source instead of adding a second one.\n')
+    _EMITTED[name] = value
     M(rf'\newcommand{{\{name}}}{{{value}}}')
+
+
+def _source(name, *candidates):
+    for origin, get in candidates:
+        try:
+            v = get()
+        except Exception:
+            continue
+        if v is None:
+            continue
+        try:
+            if not math.isfinite(float(v)):
+                continue
+        except (TypeError, ValueError):
+            pass
+        print(f'  {name}: {origin}')
+        return v
+    print(f'  {name}: PENDING -- no source carries it')
+    return None
+
+
+def macro_num(name, fmt, *candidates):
+    v = _source(name, *candidates)
+    macro(name, format(v, fmt) if v is not None else r'\textit{[pending]}')
 
 
 # ── macros the prose uses ────────────────────────────────────────────
@@ -145,6 +183,75 @@ else:
         macro(n, r'\textit{[pending]}')
     macro('accuracyVerdict', r'has not yet been evaluated under this protocol')
 
+# ── Comparative quantities the Results and Discussion prose quotes ──────────────
+# Every percentage the prose states is derived here rather than typed into the text.
+# The reframe of this paper was needed because prose asserted a direction of result
+# that the tables had since contradicted; a margin written by hand is correct exactly
+# until the next run, so none of them are written by hand.
+if D['m7'] and 'Ours \u2014 diffusion' in D['m7'].get('results', {}):
+    _r, _order = D['m7']['results'], D['m7']['ranking_by_mpe']
+    _OURS = 'Ours \u2014 diffusion'
+    _o = _r[_OURS]
+
+    def _pct_better(worse, better):
+        return (worse - better) / worse * 100.0
+
+    # Margin over the static baseline, and over the strongest method that is not ours.
+    _nv = _r.get('Zero motion (naive)', {}).get('overall', {}).get('mpe')
+    if _nv:
+        macro('gainOverStatic', f'{_pct_better(_nv, _o["overall"]["mpe"]):.1f}')
+    _rivals = [m for m in _order if m != _OURS]
+    if _rivals:
+        _next = _rivals[0]
+        macro('nextMethod', esc(_next))
+        macro('nextMPE', f"{_r[_next]['overall']['mpe']:.4f}")
+        macro('gainOverNext',
+              f"{_pct_better(_r[_next]['overall']['mpe'], _o['overall']['mpe']):.1f}")
+
+    # The horizon crossover against constant velocity, by Chamfer Distance. Constant
+    # velocity is expected to win at k=1 -- tissue motion is locally linear -- so the
+    # sign of this margin is read off the data, not assumed.
+    _cv = _r.get('Constant velocity', {}).get('per_horizon', {})
+    for _k, _nm in (('1', 'One'), ('3', 'Three')):
+        if _k in _cv and _k in _o['per_horizon']:
+            _d = _pct_better(_cv[_k]['cd'], _o['per_horizon'][_k]['cd'])
+            macro(f'cvMargin{_nm}', f'{abs(_d):.1f}')
+            macro(f'cvVerdict{_nm}',
+                  'better than' if _d > 0 else 'behind')
+
+# ── Direction and magnitude, live from Module 6 ─────────────────────────────────
+# The paper's central analysis turns on these two being separable, so both are read
+# from the run that produced the headline table rather than from any earlier one.
+for _k, _nm in (('1', 'One'), ('2', 'Two'), ('3', 'Three')):
+    macro_num(f'cos{_nm}', '+.2f',
+              ('module6_metrics.json', lambda _k=_k: D['m6']['direct'][_k]['cos']),
+              ('measured.json (transcribed)',
+               lambda _k=_k: MEAS['direction']['cosine_by_step'][_k]))
+if D['m6'] and D['m6'].get('calibration', {}).get('fit'):
+    _fit = D['m6']['calibration']['fit']
+    for _k, _nm in (('1', 'One'), ('3', 'Three')):
+        if _k in _fit and 'train_ratio' in _fit[_k]:
+            macro(f'magRatio{_nm}', f"{_fit[_k]['train_ratio']:.2f}")
+
+# Where the rollout stops paying: the first horizon at which assuming no motion is
+# at least as accurate as the model. Reported rather than claimed, because it is the
+# paper's sharpest self-imposed limit.
+if D['m6'] and D['m6'].get('rollout'):
+    _ro = D['m6']['rollout']
+    _cross = next((k for k in sorted(_ro, key=int)
+                   if _ro[k].get('naive') is not None
+                   and _ro[k]['naive'] <= _ro[k]['model']), None)
+    if _cross:
+        macro('rolloutCross', str(_cross))
+        macro('rolloutHorizon', str(max(int(k) for k in _ro)))
+
+# Directional agreement across the denoising trajectory, for the figure caption.
+_dn = (D['m6'] or {}).get('visual', {}).get('denoising', {}).get('cos_by_step')
+if _dn:
+    macro('denoiseCosFirst', f'{_dn[0]:+.2f}')
+    macro('denoiseCosLast', f'{_dn[-1]:+.2f}')
+    macro('denoiseCosMin', f'{min(_dn):+.2f}')
+
 # Reconstruction quality, averaged over whatever videos have been reconstructed. Module 2
 # writes one entry per workspace across two summary files (videos 1-6 and 7-10).
 _rec = {}
@@ -172,30 +279,6 @@ else:
 # rollout_growth_exponent absent. Resolving the fallback per FILE would then put a
 # literal 'nan' in the PDF while a transcribed value sat unused in measured.json, so
 # each macro resolves its own source and reports which one it used.
-def _source(name, *candidates):
-    for origin, get in candidates:
-        try:
-            v = get()
-        except Exception:
-            continue
-        if v is None:
-            continue
-        try:
-            if not math.isfinite(float(v)):
-                continue
-        except (TypeError, ValueError):
-            pass
-        print(f'  {name}: {origin}')
-        return v
-    print(f'  {name}: PENDING -- no source carries it')
-    return None
-
-
-def macro_num(name, fmt, *candidates):
-    v = _source(name, *candidates)
-    macro(name, format(v, fmt) if v is not None else r'\textit{[pending]}')
-
-
 macro_num('calibCorr', '.2f',
           ('module6_metrics.json', lambda: D['m6']['hypotheses']['spread_error_correlation']),
           ('measured.json (transcribed)', lambda: MEAS['uncertainty']['spread_error_correlation']))
@@ -213,9 +296,13 @@ macro_num('bestEpoch', 'd',
           ('module7_comparison.json',
            lambda: int(D['m7']['results']['Ours \u2014 diffusion']['checkpoint_epoch'])),
           ('measured.json (transcribed)', lambda: MEAS['training']['best_epoch_approx']))
+# \cosTen has no live source: Module 6 reports directional agreement only at the
+# horizons it trains on, so a ten-step cosine exists solely in the transcribed
+# epoch-60 record. The prose therefore no longer chains one-to-ten cosines in a single
+# sentence -- mixing an epoch-100 value with an epoch-60 one there read as a measured
+# trend that was never measured. It states the horizons it has, and expresses the
+# long-horizon behaviour through \rolloutCross, which is live.
 if MEAS.get('direction'):
-    macro('cosOne', f"{MEAS['direction']['cosine_by_step']['1']:+.2f}")
-    macro('cosThree', f"{MEAS['direction']['cosine_by_step']['3']:+.2f}")
     macro('cosTen', f"{MEAS['direction']['cosine_by_step']['10']:+.2f}")
 if MEAS.get('image_space'):
     i_ = MEAS['image_space']
@@ -384,10 +471,34 @@ else:
     placeholder('tab:sensitivity', 'Optimisation sensitivity.',
                 'Pending: run Module 8 study C.')
 
+# ── Backstop: every macro the prose uses must exist ────────────────────────────
+# This script's contract, stated in build.sh, is that the paper compiles whatever
+# subset of the modules has been run. A macro emitted only inside "if D['m7']:" breaks
+# that contract silently: with the results present everything builds, and the failure
+# appears only on a machine that has not downloaded them, as "Undefined control
+# sequence" rather than as anything naming the missing file. So rather than trusting
+# each branch to define its own fallback, read the manuscript and guarantee that every
+# macro it invokes is defined.
+_main = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.tex')
+try:
+    with open(_main) as _fh:
+        _wanted = set(re.findall(r'\\([a-zA-Z]+)\{\}', _fh.read()))
+except OSError:
+    _wanted = set()
+_undefined = sorted(_wanted - set(_EMITTED))
+if _undefined:
+    print(f'\n  {len(_undefined)} macro(s) used by main.tex but not produced by any '
+          'result file;\n  emitting [pending] so the build still succeeds:')
+    for _nm in _undefined:
+        print(f'      \\{_nm}')
+        macro(_nm, r'\textit{[pending]}')
+
 mac_path = os.path.join(args.outdir, 'generated_macros.tex')
 tab_path = os.path.join(args.outdir, 'generated_tables.tex')
-open(mac_path, 'w').write('\n'.join(MACROS) + '\n')
-open(tab_path, 'w').write('\n'.join(TABLES) + '\n')
+with open(mac_path, 'w') as _fh:
+    _fh.write('\n'.join(MACROS) + '\n')
+with open(tab_path, 'w') as _fh:
+    _fh.write('\n'.join(TABLES) + '\n')
 n_ok = sum(1 for v in D.values() if v)
 print(f'\nwrote {mac_path}\n      {tab_path}  ({n_ok}/{len(D)} result files found)')
 if n_ok < len(D):

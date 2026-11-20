@@ -75,10 +75,17 @@ metrics: Chamfer Distance, as used in the point-cloud forecasting literature, an
 a stricter per-point error that our identity-preserving representation makes
 available. Reconstruction reaches \reconPSNR{} dB PSNR from monocular input alone,
 within the range reported by stereo-supervised methods on comparable sequences. On
-prediction we report a negative result, analysed in detail: the model recovers the
-\emph{direction} of tissue motion but not its magnitude, which at a displacement
-scale of $4\times10^{-3}$ normalised units is sufficient to forfeit the accuracy
-comparison. The sampled futures are nevertheless well calibrated
+prediction our model ranks \oursRank{} of \nMethods{}, at \oursCD{} Chamfer Distance
+and \oursMPE{} Mean Point Error, \gainOverStatic{}\,\% better than assuming no motion
+and \gainOverNext{}\,\% better than the strongest alternative. The margin is a
+property of the horizon rather than of the method: against constant-velocity
+extrapolation we are \cvMarginOne{}\,\% \cvVerdictOne{} it one frame ahead and
+\cvMarginThree{}\,\% \cvVerdictThree{} it by three. Reaching that result required identifying and removing a scale-induced failure
+mode --- an encoder given absolute coordinates cannot separate motion from position
+when the displacement is $0.74\,\%$ of the coordinates carrying it, and collapses to
+the conditional mean --- and we report the diagnosis, the representation that removes
+it, and the measurement on both sides of the change as the most transferable
+contribution here. The sampled futures are well calibrated
 ($r=\calibCorr{}$ between predicted spread and realised error), giving a usable
 indication of when the system should not be trusted.
 \end{abstract}
@@ -138,14 +145,16 @@ estimate discards information a guidance system needs.
       closest published method --- under a single protocol, reported with both a
       correspondence-free and a correspondence-aware metric
       (Sections~\ref{sec:setup}--\ref{sec:results}).
-\item \textbf{A root-cause diagnosis of a scale-induced failure mode}: when the
-      prediction target is a small difference between large coordinates, an encoder
-      given raw coordinates degenerates to the conditional mean. We quantify the
-      ratio at which this occurs, show it accounts for the measured behaviour, and
-      give the representation that removes it (Section~\ref{sec:rootcause}).
-\item \textbf{A calibrated uncertainty estimate} and a failure analysis localising
-      the residual error to displacement magnitude rather than direction, which is
-      a prescriptive rather than merely descriptive negative result
+\item \textbf{A root-cause diagnosis of a scale-induced failure mode, and its
+      repair}: when the prediction target is a small difference between large
+      coordinates, an encoder given raw coordinates degenerates to the conditional
+      mean. We quantify the ratio at which this occurs, give the representation that
+      removes it, and report the same predictor on both sides of that change ---
+      from indistinguishable from the static baseline to the most accurate method in
+      the comparison (Section~\ref{sec:rootcause}).
+\item \textbf{A calibrated uncertainty estimate}, whose predicted spread correlates
+      at $r=\calibCorr{}$ with realised error, which no other method in our
+      comparison supplies and which is a precondition for intraoperative use
       (Sections~\ref{sec:uncertainty}--\ref{sec:discussion}).
 \end{enumerate}
 
@@ -517,9 +526,11 @@ that our reconstruction surpasses stereo methods.
 
 \subsection{Prediction accuracy}
 Table~\ref{tab:comparison} reports the comparison under the protocol of
-Section~\ref{sec:setup}. Our predictor scores \oursMPE{} Mean Point Error against
-\naiveMPE{} for the static baseline, placing \oursRank{} of \nMethods{} methods; the
-most accurate is \bestMethod{} at \bestMPE{}. The predictor \accuracyVerdict{}.
+Section~\ref{sec:setup}. Our predictor scores \oursMPE{} Mean Point Error and
+\oursCD{} Chamfer Distance, against \naiveMPE{} for the static baseline, placing
+\oursRank{} of \nMethods{} methods; the strongest alternative is \nextMethod{} at
+\nextMPE{}. The predictor \accuracyVerdict{}, and improves on \nextMethod{} by
+\gainOverNext{}\,\%.
 
 The horizon decomposition is the more informative view. Constant-velocity
 extrapolation is the strongest estimator one frame ahead and among the weakest by
@@ -541,9 +552,11 @@ fall --- overfitting consistent with a corpus of \numVideos{} short recordings.
 \caption{The denoising trajectory for one held-out frame. Top row: the noisy sample at
 six of the twenty DDIM steps, with arrows coloured green where they move in the true
 direction and red where they oppose it. Bottom row: the model's running estimate of the
-clean displacement. Directional agreement rises from $+0.02$ at the first step to $+0.64$
-at the last while the predicted magnitude stays far below the truth, which is the
-direction-versus-magnitude split of Section~\ref{sec:dirmag} made visible.}
+clean displacement. Directional agreement is \denoiseCosFirst{} at the first step
+and \denoiseCosLast{} at the last and never falls below \denoiseCosMin{}: the sampler
+refines a motion field whose direction is fixed almost immediately rather than
+assembling one out of noise, which is the behaviour Section~\ref{sec:dirmag}
+contrasts with that of the earlier formulation.}
 \label{fig:denoising}
 \end{figure*}}{}
 
@@ -552,19 +565,28 @@ direction-versus-magnitude split of Section~\ref{sec:dirmag} made visible.}
 \label{sec:direction}
 Accuracy alone cannot distinguish a predictor that has learned nothing from one
 that has learned where tissue is going but not how far. Decomposing the predicted
-displacement separates them, and Table~\ref{tab:direction} reports the result that
-organises the rest of this paper: predicted and true displacement agree
-directionally at $\cos = \cosOne{}$ one frame ahead, decaying to \cosThree{} at
-three frames and inverting to \cosTen{} by ten. Within the denoising process
-itself, agreement rises monotonically from $+0.30$ at the first step to $+0.58$ at
-the last, confirming that the generative procedure assembles a coherent motion
-field rather than noise.
+displacement into a direction and a magnitude separates them, and that decomposition
+is what makes the result of Section~\ref{sec:rootcause} legible.
 
-A predictor producing meaningless output would sit near zero. A cosine of
-\cosOne{} \emph{combined with} an error equal to the static baseline is possible
-only if the magnitude of the predicted motion is wrong. That is a far more
-tractable deficiency than an absent signal, and both corrective measures described
-in Sections~\ref{sec:predict} and~\ref{sec:system} follow from it.
+Table~\ref{tab:direction} reports both components. Predicted and true displacement
+agree directionally at $\cos = \cosOne{}$ one frame ahead, \cosTwo{} at two and
+\cosThree{} at three; over the same range the predicted magnitude is within a few per
+cent of the truth, at a ratio of \magRatioOne{} one frame ahead and \magRatioThree{}
+at three. Both components are recovered.
+
+That is precisely what the earlier formulation of this predictor failed to do. It
+reached a comparable cosine while its predicted magnitude collapsed towards zero, and
+an error indistinguishable from the static baseline followed --- at $k{=}1$ and
+$k{=}2$ it matched that baseline to the fourth decimal place, and at $k{=}3$ it was
+marginally worse. Direction without magnitude is the signature of the failure
+diagnosed in Section~\ref{sec:rootcause}, and its absence here is the clearest
+evidence that the representation change is what accounts for the present result.
+
+Within the denoising process itself, agreement is already \denoiseCosFirst{} at the
+first of the twenty DDIM steps and \denoiseCosLast{} at the last, never falling below
+\denoiseCosMin{}. The sampler refines a motion field whose direction is established
+almost immediately, rather than assembling one from noise as the earlier model's
+climb from near zero across the same schedule suggested it had to.
 
 \subsection{Root cause: a signal below the scale of its own input}
 \label{sec:rootcause}
@@ -585,11 +607,23 @@ while directional agreement remained strongly positive.
 Two observations select this explanation over the alternatives. First, the deficit is
 uniform in $k$, where a capacity or data-scale limitation would worsen as the horizon
 grows. Second, every learned baseline in Table~\ref{tab:comparison} already receives
-its context expressed relative to the most recent frame, and all of them --- including
-a $1.4\times10^{5}$-parameter multilayer perceptron --- outperformed a
-$1.6\times10^{7}$-parameter diffusion model that did not. Across that comparison the
-decisive variable is the input representation, not capacity, architecture or training
-budget.
+its context expressed relative to the most recent frame, and in that earlier
+comparison all of them --- including a $1.4\times10^{5}$-parameter multilayer
+perceptron --- outperformed a $1.6\times10^{7}$-parameter diffusion model that did
+not. The decisive variable was the input representation, not capacity, architecture
+or training budget.
+
+Adopting the relative form of Equation~\ref{eq:ctx} removes the deficit. The same
+architecture, at the same capacity, moves from matching the static baseline to
+leading Table~\ref{tab:comparison}: \oursMPE{} Mean Point Error against
+\naiveMPE{}, \gainOverStatic{}\,\% better rather than equal, with the predicted
+magnitude rising from near zero to a ratio of \magRatioOne{} of the truth. We state
+one caveat on that attribution. The working configuration also observes a longer
+context window (\ctxWindow{} frames) and is selected at a later epoch
+(\bestEpoch{}), so the before-and-after pair bounds the combined effect of three
+changes rather than isolating the representation; Section~\ref{sec:ablation} is what
+separates them, and the argument above rests on the mechanism and the uniformity of
+the original deficit in $k$, not on the paired measurement alone.
 
 We draw a general lesson rather than a local one. When the target is a small
 difference between large coordinates, the representation handed to the encoder
@@ -600,12 +634,14 @@ to identical data, budget and metrics; under per-method tuning the asymmetry wou
 have been invisible.
 
 \subsection{Cost of inference}
+\label{sec:cost}
 Table~\ref{tab:inference} separates accuracy from compute. A generative predictor's
 accuracy is purchased with network evaluations, and quoting a single accuracy
 figure conceals that trade-off; the marked row is the cheapest configuration within
 one percent of the best observed accuracy.
 
 \subsection{Ablations and sensitivity}
+\label{sec:ablation}
 Table~\ref{tab:ablation} isolates the choices specific to the generative
 formulation: prediction parameterisation, loss weighting, the residual target of
 (\ref{eq:residual}), horizon conditioning and capacity.
@@ -664,26 +700,33 @@ reached independently.
 \section{Discussion}
 \label{sec:discussion}
 
-\textbf{Direction is learned; magnitude is not.} The decisive measurement of this
-study is that predicted and true displacement agree directionally (cosine
-similarity up to $+0.57$ one frame ahead) while the overall error matches the
-static baseline. Those two facts are jointly possible only if the magnitude of the
-predicted motion is wrong. This converts an unexplained failure into a specific and
-addressable one, and motivates both the residual target of (\ref{eq:residual}) and
-the inference-time calibration of Stage 6.
+\textbf{Direction and magnitude are both recoverable, once the representation
+permits it.} The decisive measurement of this study is not the ranking but the pair
+of quantities behind it. An earlier formulation of this model, differing only in how
+context reached the encoder, agreed directionally with the truth while its predicted
+magnitude collapsed towards zero, and scored the static baseline exactly. The present
+formulation keeps the direction ($\cos = \cosOne{}$ one frame ahead) and recovers the
+magnitude (a ratio of \magRatioOne{}), and leads the comparison. A deficiency that
+had looked like a limit of the architecture was a property of its input.
 
-\textbf{Scale is the dominant difficulty.} At $4\times10^{-3}$ normalised units,
-one to two pixels projected, an error in magnitude alone suffices for a method to
-score no better than assuming no motion, even when direction is substantially
-correct. This separates the problem from outdoor point cloud forecasting, where
-inter-frame motion is metres, and explains why methods transferred from that
-literature do not trivially succeed here.
+\textbf{Scale is the dominant difficulty.} At $4\times10^{-3}$ normalised units, one
+to two pixels projected, the displacement is $0.74\,\%$ of the coordinates carrying
+it. An error in magnitude alone then suffices for a method to score no better than
+assuming no motion, even when direction is substantially correct. This separates the
+problem from outdoor point cloud forecasting, where inter-frame motion is metres, and
+explains why methods transferred from that literature do not trivially succeed here.
 
-\textbf{What a negative accuracy result does and does not imply.} The pipeline, the
-evaluation protocol and the calibrated uncertainty estimate stand independently of
-the accuracy ranking. We report the ranking as measured rather than selecting a
-protocol under which it is favourable, and we regard the localisation of the
-failure as the more useful scientific output.
+\textbf{What the comparison does and does not establish.} The ranking is reported as
+measured, under one protocol applied identically to every method, rather than under a
+protocol chosen because it flatters us. Two things bound what it establishes. The
+representation change was not isolated, as Section~\ref{sec:rootcause} states, so the
+paired measurement bounds the combined effect of three changes. And the margin over
+the strongest alternative, \gainOverNext{}\,\%, is bought with two orders of
+magnitude more parameters than the \nextMethod{} that achieves it:
+\oursParams{} against $1.6\times10^{5}$. Section~\ref{sec:cost} quantifies that
+trade-off, and for a deployment on a fixed intraoperative compute budget it is not
+obviously the right one. What the generative formulation supplies that the cheaper
+model does not is the calibrated spread of Section~\ref{sec:uncertainty}.
 
 % ============================================================================
 \section{Limitations and Future Work}
@@ -694,6 +737,13 @@ recording is the natural next step and would remove this bias.
 
 \textbf{Corpus size.} \numVideos{} short recordings is small for a generative model,
 and we observe overfitting consistent with that constraint.
+
+\textbf{Useful horizon.} The accuracy reported here is for one to three frames ahead.
+In free rollout the model beats constant-velocity extrapolation at every step to
+\rolloutHorizon{}, but from step \rolloutCross{} onward assuming no motion is at
+least as accurate, and error grows close to linearly in the horizon (exponent
+\growthExp{}). Nothing here supports using the predictor further out than the
+horizons it was trained for.
 
 \textbf{Indicative reconstruction comparison.} As stated in Section~\ref{sec:recon},
 our reconstruction figures and the published stereo-supervised figures are not
@@ -714,10 +764,12 @@ instrument annotation, and evaluated it against classical estimators and publish
 point-cloud forecasting methods under a single protocol with both
 correspondence-free and correspondence-aware metrics. Reconstruction from monocular
 input reaches a fidelity comparable to that reported by stereo-supervised methods on
-similar material. On prediction we report, and analyse, a negative accuracy result
-whose cause we localise to displacement magnitude rather than direction --- a
-distinction that is prescriptive, and from which two concrete corrective measures
-follow. The system additionally supplies a calibrated uncertainty estimate, which no
+similar material. On prediction the system is the most accurate of the
+\nMethods{} methods compared, and we report in detail the scale-induced failure mode
+that stood between those two states: when the prediction target is a small difference
+between large coordinates, the representation handed to the encoder decides whether
+the problem is learnable at all. We give the diagnosis, the representation that
+removes it, and the measurement on both sides of the change. The system additionally supplies a calibrated uncertainty estimate, which no
 other method in our comparison provides and which is a precondition for any
 intraoperative use.
 

@@ -10,6 +10,7 @@ measured.json. Nothing downstream complains: 'nan' is valid LaTeX.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -94,6 +95,62 @@ class TestStaleComparisonIsBypassed(unittest.TestCase):
         i_stale = src.index("elif MEAS.get('comparison')")
         self.assertLess(i_live, i_stale,
                         'the transcribed comparison must be the fallback, never the first branch')
+
+
+class TestEveryProseMacroIsDefined(unittest.TestCase):
+    """build.sh promises a readable PDF whatever subset of modules has been run.
+
+    A macro emitted only inside `if D['m7']:` quietly breaks that promise: with the
+    results downloaded everything builds, and the failure surfaces only on a machine
+    without them, as "Undefined control sequence" naming a macro rather than a missing
+    file. make_tables.py therefore reads main.tex and guarantees a definition for every
+    macro the prose invokes.
+    """
+
+    def _used_in_main(self):
+        with open(os.path.join(ROOT, 'paper', 'main.tex')) as fh:
+            return set(re.findall(r'\\([a-zA-Z]+)\{\}', fh.read()))
+
+    def test_no_result_files_at_all_still_defines_every_macro(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out, tex = run(os.path.join(tmp, 'nothing'), tmp)
+            defined = set(re.findall(r'\\newcommand\{\\([a-zA-Z]+)\}', tex))
+            missing = self._used_in_main() - defined
+            self.assertFalse(missing, f'main.tex would not compile; undefined: {sorted(missing)}')
+
+    def test_full_results_also_define_every_macro(self):
+        drive = os.environ.get('GASR_RESULTS')
+        if not drive or not os.path.isdir(drive):
+            self.skipTest('no downloaded results; set GASR_RESULTS to the closeout tree')
+        with tempfile.TemporaryDirectory() as tmp:
+            _, tex = run(drive, tmp)
+            defined = set(re.findall(r'\\newcommand\{\\([a-zA-Z]+)\}', tex))
+            self.assertFalse(self._used_in_main() - defined)
+
+    def test_no_macro_is_defined_twice(self):
+        """Two \\newcommand lines for one name abort the LaTeX build."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _, tex = run(os.path.join(tmp, 'nothing'), tmp)
+            names = re.findall(r'\\newcommand\{\\([a-zA-Z]+)\}', tex)
+            dupes = {n for n in names if names.count(n) > 1}
+            self.assertFalse(dupes, f'duplicate macro definitions: {sorted(dupes)}')
+
+
+class TestDuplicateGuardFires(unittest.TestCase):
+    def test_a_second_definition_is_rejected(self):
+        with open(os.path.join(ROOT, 'paper', 'make_tables.py')) as fh:
+            src = fh.read()
+        injected = src.replace("if MEAS.get('direction'):",
+                               "macro('ctxWindow', 'COLLISION')\nif MEAS.get('direction'):", 1)
+        self.assertNotEqual(injected, src, 'injection anchor missing')
+        with tempfile.TemporaryDirectory() as tmp:
+            script = os.path.join(tmp, 'dup.py')
+            with open(script, 'w') as fh:
+                fh.write(injected)
+            r = subprocess.run([sys.executable, script, '--drive', tmp, '--outdir', tmp],
+                               capture_output=True, text=True, cwd=os.path.join(ROOT, 'paper'))
+            self.assertNotEqual(r.returncode, 0, 'a duplicate macro was accepted')
+            self.assertIn('DUPLICATE MACRO', r.stdout + r.stderr)
 
 
 if __name__ == '__main__':
