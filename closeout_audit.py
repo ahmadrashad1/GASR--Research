@@ -5,7 +5,7 @@
 # manuscript quantities each one unlocks. Run it to decide what still has to be run,
 # rather than re-running an hour of evaluation to find out it was already done.
 # ════════════════════════════════════════════════════════════════════
-import os, json, time
+import os, json, textwrap, time
 
 if 'DRIVE_BASE' not in globals():
     DRIVE_BASE = '/content/drive/MyDrive/EndoGaussian'
@@ -76,10 +76,30 @@ if os.path.exists(p8):
 p6 = f'{DRIVE_BASE}/module6/module6_metrics.json'
 if os.path.exists(p6):
     try:
-        m6 = json.load(open(p6))
-        print(f'  Module 6 metrics keys    : {", ".join(sorted(m6)[:12])}')
-        if isinstance(m6.get('checkpoint'), dict):
-            print(f'  Module 6 scored epoch    : {m6["checkpoint"].get("epoch", "?")}')
+        with open(p6) as _fh:
+            m6 = json.load(_fh)
+        # The epoch these metrics were scored at is the one fact that decides whether
+        # they describe the current checkpoint or a superseded one. Module 6 records it
+        # at the top level as 'checkpoint_epoch' and names the file in 'checkpoint';
+        # earlier revisions nested both inside a dict. Read either shape, and say so
+        # outright when neither is present rather than printing nothing.
+        _ck = m6.get('checkpoint')
+        _ep = m6.get('checkpoint_epoch')
+        if _ep is None and isinstance(_ck, dict):
+            _ep = _ck.get('epoch')
+        print(f'  Module 6 scored epoch    : {_ep if _ep is not None else "NOT RECORDED"}')
+        if isinstance(_ck, str):
+            print(f'  Module 6 checkpoint      : {_ck}')
+        # Print EVERY key. A truncated list is indistinguishable from a complete one,
+        # so it invites the conclusion that a section never ran when it did.
+        _keys = sorted(m6)
+        print(f'  Module 6 metrics keys    : {len(_keys)} total')
+        for _line in textwrap.wrap(', '.join(_keys), 66):
+            print(f'      {_line}')
+        _late = [s for s in ('rollout', 'timeline', 'visual', 'quality_tests')
+                 if s not in m6]
+        for _sec in _late:
+            print(f'      absent: "{_sec}" -- that section did not finish')
     except Exception as e:
         print(f'  Module 6 file is present but unreadable: {e}')
     print()

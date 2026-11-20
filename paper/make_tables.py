@@ -202,10 +202,17 @@ macro_num('calibCorr', '.2f',
 macro_num('growthExp', '.2f',
           ('module6_metrics.json', lambda: D['m6']['rollout_growth_exponent']),
           ('measured.json (transcribed)', lambda: MEAS['rollout']['growth_exponent']))
-if MEAS.get('training'):
-    t_ = MEAS['training']
-    macro('numParams', f"{t_['parameters']:,}")
-    macro('bestEpoch', t_['best_epoch_approx'])
+# \numParams and \oursParams denote the same quantity, so a transcribed value here
+# and a live one there put two different parameter counts in one PDF. Both resolve
+# from the live comparison file first.
+macro_num('numParams', ',',
+          ('module7_comparison.json', lambda: D['m7']['results']['Ours \u2014 diffusion']['parameters']),
+          ('measured.json (transcribed)', lambda: MEAS['training']['parameters']))
+macro_num('bestEpoch', 'd',
+          ('module6_metrics.json', lambda: int(D['m6']['checkpoint_epoch'])),
+          ('module7_comparison.json',
+           lambda: int(D['m7']['results']['Ours \u2014 diffusion']['checkpoint_epoch'])),
+          ('measured.json (transcribed)', lambda: MEAS['training']['best_epoch_approx']))
 if MEAS.get('direction'):
     macro('cosOne', f"{MEAS['direction']['cosine_by_step']['1']:+.2f}")
     macro('cosThree', f"{MEAS['direction']['cosine_by_step']['3']:+.2f}")
