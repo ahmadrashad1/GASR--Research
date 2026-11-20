@@ -13,7 +13,7 @@ produced so far and emits `generated.tex`, containing both LaTeX tables and a se
 
 Usage:  python3 make_tables.py [--drive /path/to/EndoGaussian] [--out generated.tex]
 """
-import argparse, json, os, sys
+import argparse, json, math, os, sys
 
 AP = argparse.ArgumentParser()
 AP.add_argument('--drive', default=os.environ.get('DRIVE_BASE', ''),
@@ -167,15 +167,41 @@ else:
     macro('reconSSIM', r'\textit{[pending]}')
     macro('reconVideos', r'\textit{[pending]}')
 
-if D['m6'] and D['m6'].get('hypotheses'):
-    macro('calibCorr', f"{D['m6']['hypotheses'].get('spread_error_correlation', float('nan')):.2f}")
-    macro('growthExp', f"{D['m6'].get('rollout_growth_exponent', float('nan')):.2f}")
-elif MEAS.get('uncertainty'):
-    macro('calibCorr', f"{MEAS['uncertainty']['spread_error_correlation']:.2f}")
-    macro('growthExp', f"{MEAS['rollout']['growth_exponent']:.2f}")
-else:
-    macro('calibCorr', r'\textit{[pending]}')
-    macro('growthExp', r'\textit{[pending]}')
+# A live results file can be PRESENT but not carry every field -- Module 6 writes its
+# metrics before the rollout section, so a run that stopped early leaves
+# rollout_growth_exponent absent. Resolving the fallback per FILE would then put a
+# literal 'nan' in the PDF while a transcribed value sat unused in measured.json, so
+# each macro resolves its own source and reports which one it used.
+def _source(name, *candidates):
+    for origin, get in candidates:
+        try:
+            v = get()
+        except Exception:
+            continue
+        if v is None:
+            continue
+        try:
+            if not math.isfinite(float(v)):
+                continue
+        except (TypeError, ValueError):
+            pass
+        print(f'  {name}: {origin}')
+        return v
+    print(f'  {name}: PENDING -- no source carries it')
+    return None
+
+
+def macro_num(name, fmt, *candidates):
+    v = _source(name, *candidates)
+    macro(name, format(v, fmt) if v is not None else r'\textit{[pending]}')
+
+
+macro_num('calibCorr', '.2f',
+          ('module6_metrics.json', lambda: D['m6']['hypotheses']['spread_error_correlation']),
+          ('measured.json (transcribed)', lambda: MEAS['uncertainty']['spread_error_correlation']))
+macro_num('growthExp', '.2f',
+          ('module6_metrics.json', lambda: D['m6']['rollout_growth_exponent']),
+          ('measured.json (transcribed)', lambda: MEAS['rollout']['growth_exponent']))
 if MEAS.get('training'):
     t_ = MEAS['training']
     macro('numParams', f"{t_['parameters']:,}")
