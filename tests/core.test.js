@@ -76,3 +76,49 @@ t.test('horizonLabel gives a range, never a single figure, when timing is good',
   a.match(s, /3 frames ahead/);
   a.match(s, /0\.2.*1\.0\s*s/);
 });
+
+// ── Task 2: scenes and placeholder geometry ──────────────────────────────────
+const S = require('../demo/clinical/scenes.js');
+const synth = require('../demo/clinical/synth.js');
+
+t.test('there are exactly seven scenes in spec order', () => {
+  a.strictEqual(S.length, 7);
+  a.deepStrictEqual(S.map(s => s.id),
+    ['sees','reconstructs','why','prediction','baselines','uncertainty','standing']);
+});
+
+t.test('every scene declares only known layers', () => {
+  const ok = new Set(['frame','ctx','gt','pred','cv','still','sigma']);
+  for (const s of S) {
+    a.ok(s.title && s.body, `${s.id} needs title and body`);
+    for (const l of s.layers) a.ok(ok.has(l), `${s.id}: unknown layer ${l}`);
+  }
+});
+
+t.test('only the first two scenes use endoscopic imagery', () => {
+  a.deepStrictEqual(S.filter(s => s.layers.includes('frame')).map(s => s.id),
+                    ['sees','reconstructs']);
+});
+
+t.test('no scene hard-codes a comparative claim', () => {
+  const banned = /\b(outperform|beats|better than|best|wins|superior|state of the art)\b/i;
+  for (const s of S) a.doesNotMatch(s.body, banned, `${s.id} states a verdict`);
+});
+
+t.test('no scene states an absolute physical unit', () => {
+  const banned = /\b\d+(\.\d+)?\s*(mm|cm|millimet|ms|millisecond)/i;
+  for (const s of S) a.doesNotMatch(s.body, banned, `${s.id} invents a unit`);
+});
+
+t.test('synth is shaped like the real payload and claims nothing', () => {
+  const d = synth();
+  a.strictEqual(d.synthetic, true);
+  a.strictEqual(d.mean_error, null);
+  a.deepStrictEqual(d.horizons, [1, 3]);
+  a.strictEqual(d.frames.length, d.n_frames);
+  for (const k of d.horizons)
+    for (const tag of ['gt','pred','cv'])
+      a.strictEqual(d.frames[0][tag+k].length, d.n_points*3, `${tag}${k} wrong length`);
+  a.strictEqual(d.frames[0].sigma1.length, d.n_points);
+  a.strictEqual(d.frames[0].sigma3.length, d.n_points);
+});
