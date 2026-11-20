@@ -106,3 +106,32 @@ class TestExportContract(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestNotebookSync(unittest.TestCase):
+    """The notebook is what actually runs in Colab; the .py file is what is reviewed.
+
+    When they drift, every reader of this repo is reading something other than what
+    produced the results. The plan names cell 47; the Module 9 cell is at index 48
+    (47 is empty), so the index is located by content rather than trusted.
+    """
+
+    NB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      'FYP_MultiVideo_Pipeline_(11).ipynb')
+
+    def _cells(self):
+        with open(self.NB, encoding='utf-8') as fh:
+            return [''.join(c['source']) for c in json.load(fh)['cells']]
+
+    def test_exactly_one_cell_holds_the_module9_export(self):
+        with open(SRC, encoding='utf-8') as fh:
+            want = fh.read().strip()
+        hits = [i for i, c in enumerate(self._cells()) if c.strip() == want]
+        self.assertEqual(len(hits), 1,
+                         f'expected the Module 9 export in exactly one cell, found {hits}')
+
+    def test_the_module9_cell_is_at_index_48(self):
+        with open(SRC, encoding='utf-8') as fh:
+            want = fh.read().strip()
+        self.assertEqual(self._cells()[48].strip(), want,
+                         'cell 48 has drifted from module9_demo_export.py')

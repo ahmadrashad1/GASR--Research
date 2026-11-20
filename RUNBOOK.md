@@ -285,6 +285,25 @@ The header badge must read **measured**. If it reads **synthetic**, the JSON is 
 beside `index.html` or the page was opened over `file://` — which is what
 `demo_data.js` and `demo/clinical/` exist for.
 
+### The clinical demonstrator — what you actually drive at the viva
+
+```bash
+# copy module9_demo/demo_data.js  -> demo/clinical/demo_data.js
+# copy module9_demo/frames/       -> demo/clinical/frames/
+# then double-click demo/clinical/index.html -- no server, no network
+```
+
+Copy `demo_data.js`, not `demo_data.json`: this page opens over `file://`, where the
+browser refuses to request local data, so the payload has to arrive as a script. The
+JSON is the served viewer's copy.
+
+Its badge reads **MEASURED** or **PLACEHOLDER DATA** and there is no third state. Without
+`demo_data.js` it still runs, on invented geometry, so you can rehearse the walkthrough
+— and in that mode it shows no comparison at all and no endoscopic imagery, by design.
+
+Neither copied file is committed: `frames/` is real endoscopic imagery, and that is not
+a decision to make on a public repository. See `demo/clinical/README.md`.
+
 ---
 
 ## 6. The paper — minutes
