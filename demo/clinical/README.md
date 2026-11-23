@@ -10,54 +10,33 @@ Stage 7 claim. Use this one in the room.
 
 ## Running it
 
-**Double-click `index.html`.** No server, no terminal, no network, no install.
+**Double-click `index.html`.** No server, no terminal, no internet, no install.
 
-That constraint is the reason for the whole file layout. A page opened from disk runs on
-the `file://` origin, where the browser refuses both module scripts and local data
-requests, so the data arrives as a classic script that assigns `window.DEMO_DATA`.
-Nothing here is loaded over a network, so it works on a locked-down laptop in an
-examination room with the wifi off.
+That constraint shapes the whole build. A page on the `file://` origin cannot fetch
+local data and cannot load a module script, so the deliverable is a single
+self-contained HTML file: React, the styles and all the logic are inlined into it as a
+classic script. `demo_data.js` and `frames/` stay outside it — they are the measured
+export, they are large, and they are not committed.
 
-## Getting the real data in
+## Changing it
 
-Copy two things out of `{DRIVE_BASE}/module9_demo/` to sit beside `index.html`:
+The page is built, not hand-edited. Source lives in `demo/clinical-src/`
+(React 19 + TypeScript + Tailwind 4, bundled by Vite), deliberately *outside* this
+folder so `node_modules` never travels onto the USB stick.
 
-| Copy | What it is |
-|---|---|
-| `demo_data.js` | the payload, as a `<script>`-loadable file |
-| `frames/` | the exported endoscopic stills, referenced by `<img src>` |
-
-Do **not** copy `demo_data.json` here — that is the same payload for the other viewer,
-which is served over HTTP and can request it. This page cannot.
-
-```
-demo/clinical/
-├── index.html      ← double-click this
-├── core.js
-├── scenes.js
-├── synth.js
-├── demo_data.js    ← from Drive
-└── frames/         ← from Drive
+```bash
+cd demo/clinical-src
+npm install
+npm run dev      # hot reload at localhost; put demo_data.js in public/ to see real data
+npm test         # 39 tests: logic, scenes, and the app mounted in a DOM
+npm run check    # TypeScript
+npm run build    # bundles, verifies, and installs ../clinical/index.html
 ```
 
-Neither copied file is committed. `frames/` holds real endoscopic imagery, and putting a
-surgical frame into a public repository is a patient-data decision that is not the
-builder's to make.
-
-## The badge, and what placeholder mode means
-
-The badge in the top right reads **MEASURED** or **PLACEHOLDER DATA**. There is no third
-state and no silent fallback.
-
-Without `demo_data.js` the app runs on invented geometry so the walkthrough can be
-rehearsed. In that mode:
-
-- every screen is labelled `PLACEHOLDER DATA`;
-- **no comparison is shown at all** — placeholder data carries no measurement, so there
-  is nothing for the app to read, and it cannot state a verdict even by accident;
-- **there is no endoscopic imagery.** Scenes 1 and 2 show a panel saying the imagery
-  comes from the export. A generated "endoscopic" picture would be synthetic clinical
-  imagery on a projector, which is worse than an honest blank.
+`npm run build` refuses to install a page that would not open by double-click. It
+checks for a module script, an external stylesheet, a network request and any use of
+`fetch`, and fails the build rather than shipping a page that works on your laptop and
+is blank on the examiner's.
 
 ## The overlay
 
@@ -122,7 +101,8 @@ will not agree, and saying so plainly beats a panel member noticing mid-viva.
 ## Tests
 
 ```bash
-node --test tests/core.test.js tests/app.test.js      # from the repo root
+cd demo/clinical-src && npm test     # logic + components (39)
+node --test tests/app.test.js         # the built page, from the repo root
 ```
 
 `core.test.js` covers the maths and the computed verdicts, including what happens with

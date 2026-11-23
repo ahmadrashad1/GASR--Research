@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* The surgical palette, fixed by the spec and shared with the research viewer. */
+@theme {
+  --color-blood:   #D62828;
+  --color-crimson: #5C0A0A;
+  --color-flesh:   #C98276;
+  --color-bone:    #F5F5F7;
+  --color-dim:     #75757E;
+  --color-stage:   #0B0B0D;
+  --color-panel:   #131317;
+  --color-edge:    rgba(245, 245, 247, 0.13);
+}
+
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--color-stage); color: var(--color-bone); overflow: hidden; }
