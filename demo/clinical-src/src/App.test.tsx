@@ -125,3 +125,131 @@ test('a payload with no horizons list still renders instead of going blank', () 
   render(<App data={d} placeholder={false} />);
   a.ok(screen.getByText(SCENES[0].title));
 });
+
+// ── live inference ───────────────────────────────────────────────────────────
+// Live mode is progressive enhancement. These tests pin the half that matters: that
+// its absence, and its failure, cost the page nothing.
+import { beforeEach } from 'vitest';
+import { waitFor } from '@testing-library/react';
+import { stubFetch } from './test-setup';
+
+const LIVE_INFO = {
+  live: true, checkpoint_epoch: 100, params: 16318467, window: 32, n_anchor: 512,
+  target_mode: 'cv_residual', steps: 20, samples: 4, threads: 12, video: '3',
+  origin_min: 240, origin_max: 296, n_points: 256, horizons: [1, 3], split_frame: 240,
+};
+
+// The health reply has to describe the payload the page actually loaded, or the
+// mismatch guard refuses live mode -- which is the point of that guard.
+function infoFor(d: Payload) {
+  return { ...LIVE_INFO, video: d.video, n_points: d.n_points };
+}
+
+function liveRowFor(d: Payload, k: number, over: Record<string, unknown> = {}) {
+  const f = d.frames[0];
+  return {
+    origin: f.t, k, alpha: 1.02, seconds: 9.4, steps: 20, samples: 4,
+    ctx: f.ctx, pred: f[`pred${k}`], cv: f[`cv${k}`], gt: f[`gt${k}`],
+    px_ctx: f.px_ctx, px_pred: f.px_ctx, px_cv: f.px_ctx, px_gt: f.px_ctx,
+    mean_error: { ours: 0.003, cv: 0.004, still: 0.005 },
+    ...over,
+  };
+}
+
+beforeEach(() => stubFetch());
+
+test('with no server the page is exactly the exported demonstrator', async () => {
+  render(<App data={real()} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('MEASURED')));
+  a.doesNotMatch(document.body.textContent!, /local inference server/i);
+  a.doesNotMatch(document.body.textContent!, /run the model now/i);
+});
+
+test('a server that is up but has no data bundle does not light the badge', async () => {
+  stubFetch(() => ({ ...LIVE_INFO, live: false }));
+  render(<App data={real()} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('MEASURED')));
+  a.doesNotMatch(document.body.textContent!, /local inference server/i);
+});
+
+test('a reachable server offers live inference without changing what is shown', async () => {
+  const d = real();
+  stubFetch(() => infoFor(d));
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.match(document.body.textContent!, /local inference server/i));
+  // Nothing has been computed yet, so the badge must still say where the numbers came from.
+  a.ok(screen.getByText('MEASURED'));
+  a.match(document.body.textContent!, /Press L and the model runs here/);
+});
+
+test('running the model live marks the reading as live and says it was computed here',
+     async () => {
+  const d = real();
+  stubFetch(url => url === '/api/health' ? infoFor(d) : liveRowFor(d, 3));
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('run the model now')));
+  fireEvent.click(screen.getByText('run the model now'));
+  await waitFor(() => a.ok(screen.getByText('LIVE')));
+  a.match(document.body.textContent!, /Computed on this machine/);
+  a.match(document.body.textContent!, /origin \d+ alone/);
+});
+
+test('a live prediction never restates the sequence-level table', async () => {
+  const d = real();
+  stubFetch(url => url === '/api/health' ? infoFor(d) : liveRowFor(d, 3));
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('run the model now')));
+  for (let i = 0; i < 4; i++) fireEvent.keyDown(window, { key: 'ArrowRight' });
+  const before = screen.getByText(/share of how far the tissue actually travelled/).textContent;
+  fireEvent.keyDown(window, { key: 'L' });
+  await waitFor(() => a.match(document.body.textContent!, /Computed on this machine/));
+  a.match(document.body.textContent!, /averages the whole held-out sequence/);
+  a.equal(screen.getByText(/share of how far the tissue actually travelled/).textContent,
+          before, 'the sequence-level scope note changed when one origin was computed');
+});
+
+test('a server that dies mid-demo falls back to the exported data', async () => {
+  const d = real();
+  stubFetch(url => url === '/api/health' ? infoFor(d) : undefined);
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('run the model now')));
+  fireEvent.click(screen.getByText('run the model now'));
+  await waitFor(() => a.match(document.body.textContent!, /did not answer/));
+  a.ok(screen.getByText('MEASURED'), 'the badge must fall back, not stay LIVE');
+  a.match(document.body.textContent!, /still holds/);
+  // The exported geometry is still what is drawn, so the scene is still usable.
+  a.ok(screen.getByText(SCENES[0].title));
+});
+
+test('a refused origin is reported as the server explains it', async () => {
+  const d = real();
+  stubFetch(url => url === '/api/health' ? infoFor(d)
+    : ({ error: 'origin 10 is outside the held-out range 240..296' }));
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('run the model now')));
+  fireEvent.click(screen.getByText('run the model now'));
+  await waitFor(() => a.match(document.body.textContent!, /held-out range/));
+});
+
+test('changing the horizon drops a live row rather than relabelling it', async () => {
+  const d = real();
+  stubFetch(url => url === '/api/health' ? infoFor(d) : liveRowFor(d, 3));
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.ok(screen.getByText('run the model now')));
+  fireEvent.keyDown(window, { key: '3' });
+  fireEvent.keyDown(window, { key: 'L' });
+  await waitFor(() => a.ok(screen.getByText('LIVE')));
+  fireEvent.keyDown(window, { key: '1' });
+  await waitFor(() => a.ok(screen.getByText('MEASURED')));
+});
+
+test('a server serving a different video is refused on screen, not used', async () => {
+  const d = real();
+  stubFetch(() => ({ ...infoFor(d), video: 'workspace_video9' }));
+  render(<App data={d} placeholder={false} />);
+  await waitFor(() => a.match(document.body.textContent!, /was refused/));
+  a.match(document.body.textContent!, /another sequence's geometry/);
+  a.ok(screen.getByText('MEASURED'));
+  a.doesNotMatch(document.body.textContent!, /run the model now/,
+                 'live controls must not appear for a mismatched server');
+});

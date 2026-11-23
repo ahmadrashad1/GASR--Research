@@ -53,8 +53,43 @@ if (/<script[^>]+\bsrc\s*=\s*["'](?!demo_data\.js)/.test(html)) {
 if (/<link[^>]+stylesheet/.test(html)) {
   faults.push('references an external stylesheet; CSS must be inlined');
 }
-if (/\bfetch\s*\(|XMLHttpRequest/.test(html)) {
-  faults.push('uses fetch or XHR, which cannot read a local file');
+// fetch is allowed, but only to the local inference server's API, and only because
+// the page checks location.protocol before calling it.
+//
+// WHERE THE REAL GUARANTEE LIVES: src/live.test.ts asserts that probeLive() on a
+// file:// origin makes no request AT ALL, by counting calls against a stubbed fetch.
+// That is a behavioural proof and it is what this constraint actually rests on.
+//
+// The checks below are a backstop with a known blind spot, stated rather than
+// implied: the bundle calls fetch through a local alias, so the call-site regex sees
+// nothing in our own code and would only catch a NEW, direct `fetch('something')`.
+// That is still worth catching -- fetching a local file is exactly the mistake that
+// makes the page work over the dev server and come up blank when double-clicked --
+// but it is not what proves the file:// path safe.
+if (/XMLHttpRequest/.test(html)) {
+  faults.push('uses XMLHttpRequest; the live path uses fetch to /api/ and nothing else');
+}
+const fetches = html.match(/\bfetch\s*\(\s*["'`][^"'`]*/g) ?? [];
+const badFetch = fetches.filter(f => !/["'`]\/api\//.test(f));
+if (badFetch.length) {
+  faults.push(`fetches something other than the live API: ${badFetch.slice(0, 2)
+    .map(f => f.slice(0, 40)).join(', ')}`);
+}
+if (/\bfetch\s*\(\s*[^"'`\s)]/.test(html)) {
+  faults.push('calls fetch with a computed URL; the guard cannot verify it stays local');
+}
+if (!/createElement\(\s*["'`]script["'`]\s*\)/.test(html)) {
+  faults.push('no injected script tag: demo_data.js must load without fetch');
+}
+// The live path must be present and must still be gated on the protocol. If either
+// literal has gone, a refactor has either dropped live mode or -- worse -- dropped
+// the check that keeps it from firing on file://.
+for (const [needle, why] of [
+  ['/api/health', 'the live health probe is missing from the bundle'],
+  ['/api/predict', 'the live prediction call is missing from the bundle'],
+  ['protocol', 'the location.protocol check that keeps file:// from requesting is gone'],
+]) {
+  if (!html.includes(needle)) faults.push(why);
 }
 // Only references that actually LOAD something count. React's minified error URL and
 // a Tailwind credit in a CSS comment are inert strings, and the w3.org XML namespaces

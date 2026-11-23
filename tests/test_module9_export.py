@@ -142,6 +142,25 @@ class TestNotebookSync(unittest.TestCase):
         hits = [i for i, c in enumerate(self._cells()) if c.strip() == want]
         self.assertEqual(hits, [50], f'standalone cell out of sync; matched {hits}')
 
+    def test_the_live_bundle_cell_is_synced(self):
+        # serve/export_live_bundle.py is the Colab cell that produces the local
+        # server's data. It is pinned by content and asserted to be the LAST cell
+        # rather than a fixed index, so appending work after Module 9 cannot silently
+        # ship a stale copy of it -- the failure that already happened once with the
+        # standalone cell.
+        gen = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           'serve', 'export_live_bundle.py')
+        with open(gen, encoding='utf-8') as fh:
+            want = fh.read().strip()
+        cells = self._cells()
+        hits = [i for i, c in enumerate(cells) if c.strip() == want]
+        self.assertEqual(len(hits), 1,
+                         f'export_live_bundle.py should appear in exactly one cell, '
+                         f'found {hits}')
+        self.assertEqual(hits[0], len(cells) - 1,
+                         'the live-bundle cell must be last: it reuses the Module 9 '
+                         'cell\'s helpers and has to run after it')
+
     def test_the_module9_cell_is_at_index_48(self):
         with open(SRC, encoding='utf-8') as fh:
             want = fh.read().strip()

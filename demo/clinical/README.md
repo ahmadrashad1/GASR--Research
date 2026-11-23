@@ -10,7 +10,23 @@ Stage 7 claim. Use this one in the room.
 
 ## Running it
 
-**Double-click `index.html`.** No server, no terminal, no internet, no install.
+**Double-click `index.html`.** No server, no terminal, no internet, no install. This
+is the path that must work, and it is the one to use if anything is uncertain.
+
+**Optionally**, start the local inference server first and open it over http instead:
+
+```bash
+python3 serve/server.py --warm      # then open http://localhost:8765
+```
+
+Same page, same file, one addition: a **run the model now** button that predicts on
+this laptop in about ten seconds, at any origin in the held-out tail — including ones
+the export never visited. Everything else is identical. See `serve/README.md`.
+
+The page never requests anything when opened from `file://`, so the double-click path
+is unchanged and cannot be affected by the server being absent, broken, or forgotten.
+If the server dies mid-demo the page says so in one line and carries on with the
+exported measurement.
 
 That constraint shapes the whole build. A page on the `file://` origin cannot fetch
 local data and cannot load a module script, so the deliverable is a single
@@ -98,11 +114,28 @@ Scene 7 reports the mean point error over the exported points of **one sequence*
 not the paper's comparison table, which is Chamfer distance over all ten videos. The two
 will not agree, and saying so plainly beats a panel member noticing mid-viva.
 
+## Live inference, and what it is not allowed to do
+
+Live mode adds a prediction; it never restates a result.
+
+- The readout table keeps averaging **the whole held-out sequence, from the export**,
+  because that is what its sentences are about. A live origin's own errors appear in a
+  separate panel, labelled as one origin, which is a single frame and not a result.
+- The server refuses origins before Module 4's `split_frame`. Those frames trained the
+  model, and predicting one would flatter it for the one reason that proves nothing.
+  It refuses origins past the end too, for the unrelated reason that the video runs out
+  before the horizon, and says which.
+- Nothing is precomputed. The bundle the server reads carries the tracked trajectory
+  and no predictions at all, so what appears on screen was computed in the room.
+- A live prediction uses the same checkpoint, the same 20 denoising steps and the same
+  4 averaged trajectories as every number in the report.
+
 ## Tests
 
 ```bash
-cd demo/clinical-src && npm test     # logic + components (39)
-node --test tests/app.test.js         # the built page, from the repo root
+cd demo/clinical-src && npm test      # logic, components, live fallback (62)
+node --test tests/app.test.js         # the built page, from the repo root (8)
+python3 -m unittest tests.test_serve_engine   # the inference server (17)
 ```
 
 `core.test.js` covers the maths and the computed verdicts, including what happens with

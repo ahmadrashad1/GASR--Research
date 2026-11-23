@@ -51,3 +51,11 @@ demo/clinical/demo_data.js
 # committed -- it is the deliverable and must work from a clone without npm.
 demo/clinical-src/node_modules/
 demo/clinical-src/dist/
+
+# The local inference server's data. A patient video's tracked geometry, for the same
+# reason demo/clinical/frames/ is ignored.
+serve/live_bundle.npz
+serve/__pycache__/
+
+# The trained checkpoint: 261 MB, and GitHub refuses files over 100 MB anyway.
+diffusion_ckpt_best.pth

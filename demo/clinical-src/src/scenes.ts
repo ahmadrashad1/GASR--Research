@@ -153,6 +153,40 @@ export const STR: Record<string, string> = {
     'here looks small against it. Averaged over {points} points of this one sequence, ' +
     'in normalised units.',
 
+  // ── Live inference ────────────────────────────────────────────────────────
+  // Shown only when the page was served by serve/server.py. Double-clicked, none of
+  // these strings can appear, because no request is attempted from file://.
+  liveOffer:
+    'This page is being served by the local inference server, so the prediction on ' +
+    'screen does not have to be the exported one. Press L and the model runs here, ' +
+    'now, on this laptop: {steps} denoising steps averaged over {samples} ' +
+    'trajectories, from the same checkpoint the report was written from.',
+
+  liveComputing:
+    'Running the model on this origin. {steps} denoising steps over {points} points on ' +
+    'a laptop CPU takes a few seconds; the exported result stays on screen until the ' +
+    'new one is ready.',
+
+  liveFresh:
+    'Computed on this machine {seconds} s ago, not read from the export — same ' +
+    'checkpoint, same {steps} steps, same {samples} averaged trajectories as every ' +
+    'number in the report.',
+
+  liveScope:
+    'The table above is unchanged: it averages the whole held-out sequence, from the ' +
+    'export. The figures here are this one origin, which is a single frame and not a ' +
+    'result.',
+
+  liveFailed:
+    'The local server did not answer, so the exported measurement is still on screen ' +
+    'and everything on it still holds. Nothing this page claims depends on the server ' +
+    'being up.',
+
+  liveRange:
+    'Live origins run {lo} to {hi} — the held-out tail only. Earlier frames trained ' +
+    'the model, and predicting one of those would flatter it for the one reason that ' +
+    'proves nothing, so the server refuses them.',
+
   missingPrefix: 'This export has no ',
   missingSuffix: ' at {horizon}.',
   GAP_GT: 'recorded outcome',

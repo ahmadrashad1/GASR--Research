@@ -20,12 +20,33 @@ t.test('the built page loads no module script', () => {
   a.doesNotMatch(html, /<script[^>]+type\s*=\s*["']module["']/);
 });
 
-t.test('the built page requests nothing it cannot have', () => {
-  a.doesNotMatch(html, /\bfetch\s*\(/, 'fetch cannot read a local file');
-  a.doesNotMatch(html, /XMLHttpRequest/);
+t.test('the built page loads nothing from the network', () => {
   const loads = html.match(/(?:\bsrc|\bhref)\s*=\s*["']https?:\/\/[^"']+/gi) || [];
   a.deepStrictEqual(loads.filter(u => !/w3\.org/.test(u)), [],
                     'the page must not load anything over a network');
+  a.doesNotMatch(html, /XMLHttpRequest/);
+});
+
+t.test('the page talks to the local server only, and only over http', () => {
+  // The page may now call a local inference server -- but only when it was itself
+  // served over http by serve/server.py, which makes the API same-origin. Opened by
+  // double-click it is on file://, and src/live.ts returns early on the protocol
+  // before any request is made (src/live.test.ts counts the calls and proves it).
+  //
+  // This asserts the two literals that gate it. It deliberately does NOT assert the
+  // absence of `fetch(`: the bundle calls fetch through a local alias, so that
+  // assertion passed while meaning nothing, which is worse than not having it.
+  a.match(html, /\/api\/health/, 'the live probe is missing from the built page');
+  a.match(html, /\/api\/predict/, 'the live prediction call is missing');
+  a.match(html, /protocol/,
+          'the protocol gate that stops file:// from requesting is gone');
+
+  // Any DIRECT fetch call that survives minification must target the API. A new
+  // fetch of a local file is the mistake this catches: file:// refuses it, so the
+  // page would work over the server and come up blank when double-clicked.
+  const direct = html.match(/\bfetch\s*\(\s*[`'"][^`'"]*/g) || [];
+  a.deepStrictEqual(direct.filter(f => !/[`'"]\/api\//.test(f)), [],
+                    'the page fetches something other than the local API');
 });
 
 t.test('the built page is self-contained', () => {
