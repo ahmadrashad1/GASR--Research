@@ -557,19 +557,37 @@ def camera_from(meta, frame_hw):
     """Pinhole intrinsics for drawing predictions onto the endoscopic frame.
 
     Module 6 projects with exactly these and states the trajectories are already in
-    camera space -- "World (= camera) points" -- so no extrinsics are involved. When
-    camera_meta.json is absent Module 1's documented fallback is a 75-degree horizontal
-    FOV with a centred principal point; the overlay is then plausible but NOT measured,
-    and 'calibrated' carries that distinction into the payload so the app can say so
-    rather than presenting a guess with the confidence of a measurement."""
-    if meta:
-        return {'fx': float(meta['fx']), 'fy': float(meta['fy']),
-                'cx': float(meta['cx']), 'cy': float(meta['cy']),
-                'W': int(meta['W']), 'H': int(meta['H']), 'calibrated': True}
+    camera space -- "World (= camera) points" -- so no extrinsics are involved.
+
+    CALIBRATION IS NOT ASSUMED FROM THE FILE'S EXISTENCE. Module 1 always writes
+    camera_meta.json, and always with fx derived from a nominal 75-degree laparoscope
+    FOV: a textbook figure for a 10mm scope, not a measurement of the one that shot
+    this video. Reading "the file is there" as "the camera is calibrated" marks every
+    sequence calibrated and suppresses the warning that exists to stop an assumption
+    reaching a projector with the confidence of a measurement.
+
+    So the assumption is detected rather than trusted: metadata whose fx matches the
+    FOV formula -- with or without the fov_deg field that Module 1 also writes -- is
+    reported as 'assumed-fov'.
+
+    This does NOT mean the overlay is misaligned. The reconstruction was itself built
+    with these intrinsics, so projecting with them is self-consistent and the points
+    land where the pipeline believes the tissue is. What is unfounded is any claim that
+    the field of view matches the real scope."""
     H_, W_ = int(frame_hw[0]), int(frame_hw[1])
+    if meta:
+        fx, fy = float(meta['fx']), float(meta['fy'])
+        W = int(meta.get('W', W_)); H = int(meta.get('H', H_))
+        assumed = (W / 2) / math.tan(math.radians(float(meta.get('fov_deg', 75.0))) / 2)
+        looks_assumed = ('fov_deg' in meta) or (abs(fx - assumed) <= 1e-6 * max(fx, 1.0))
+        return {'fx': fx, 'fy': fy,
+                'cx': float(meta['cx']), 'cy': float(meta['cy']),
+                'W': W, 'H': H,
+                'calibrated': not looks_assumed,
+                'source': 'assumed-fov' if looks_assumed else 'measured'}
     fx = (W_ / 2) / math.tan(math.radians(75.0) / 2)
     return {'fx': fx, 'fy': fx, 'cx': W_ / 2.0, 'cy': H_ / 2.0,
-            'W': W_, 'H': H_, 'calibrated': False}
+            'W': W_, 'H': H_, 'calibrated': False, 'source': 'assumed-fov'}
 
 def project_norm(world, cam):
     """Camera-space points -> image coordinates in [0, 1].

@@ -208,3 +208,43 @@ class TestOverlayProjection(unittest.TestCase):
         self.assertIn("f'px_{tag}{k}': enc(", src,
                       'gt, pred and cv each need image coordinates per horizon')
         self.assertIn("for tag in ('gt', 'pred', 'cv')", src)
+
+
+class TestCalibrationIsNotAssumed(unittest.TestCase):
+    """Module 1 ALWAYS writes camera_meta.json, and always with fx derived from a
+    nominal 75-degree laparoscope FOV -- a textbook figure for a 10mm scope, not a
+    measurement of this one. The presence of the file is therefore not evidence of
+    calibration, and treating it as such suppresses the one warning that stops an
+    assumption reaching a projector with the confidence of a measurement.
+    """
+
+    def setUp(self):
+        self.h = load_helpers()
+
+    @staticmethod
+    def _module1_meta(W=640, H=360):
+        fx = (W / 2) / math.tan(math.radians(75.0) / 2)
+        return {'H': H, 'W': W, 'fx': fx, 'fy': fx, 'cx': W / 2.0, 'cy': H / 2.0,
+                'fov_deg': 75.0, 'n_frames': 300}
+
+    def test_module_1s_assumed_intrinsics_are_not_called_calibrated(self):
+        cam = self.h['camera_from'](self._module1_meta(), (360, 640))
+        self.assertEqual(cam['calibrated'], False)
+        self.assertEqual(cam['source'], 'assumed-fov')
+
+    def test_the_assumption_is_caught_even_without_the_fov_field(self):
+        meta = self._module1_meta()
+        del meta['fov_deg']
+        cam = self.h['camera_from'](meta, (360, 640))
+        self.assertEqual(cam['calibrated'], False)
+
+    def test_genuinely_measured_intrinsics_are_still_honoured(self):
+        meta = {'H': 360, 'W': 640, 'fx': 503.2, 'fy': 499.7, 'cx': 322.4, 'cy': 178.9}
+        cam = self.h['camera_from'](meta, (360, 640))
+        self.assertEqual(cam['calibrated'], True)
+        self.assertEqual(cam['source'], 'measured')
+
+    def test_an_absent_file_is_also_uncalibrated(self):
+        cam = self.h['camera_from'](None, (360, 640))
+        self.assertEqual(cam['calibrated'], False)
+        self.assertEqual(cam['source'], 'assumed-fov')

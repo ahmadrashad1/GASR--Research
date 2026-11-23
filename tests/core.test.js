@@ -158,3 +158,26 @@ t.test('no clinician-facing string is left behind in the page', () => {
     a.ok(!page.includes(gone), 'moved back into the page: ' + gone);
   }
 });
+
+t.test('displayGain amplifies motion that is below the resolution of the screen', () => {
+  // Tissue moves ~2 px over three frames at 640x360, and the methods differ by ~1 px.
+  // Drawn at true scale every series lands inside one dot. Module 6 faced this and
+  // records an arrow_gain of 5 and 100 on its own figures; the gain is honest only if
+  // it is stated, which is why it is computed rather than hard-coded.
+  a.strictEqual(G.displayGain(2, 45), 20);
+  a.strictEqual(G.displayGain(45, 45), 1);
+});
+
+t.test('displayGain never shrinks motion and never divides by zero', () => {
+  a.strictEqual(G.displayGain(500, 45), 1, 'large motion is already visible');
+  a.strictEqual(G.displayGain(0, 45), 1);
+  a.strictEqual(G.displayGain(-3, 45), 1);
+  a.strictEqual(G.displayGain(null, 45), 1);
+});
+
+t.test('displayGain returns a round number a presenter can say out loud', () => {
+  for (const m of [0.1, 0.4, 1, 2, 7, 19, 44]) {
+    const g = G.displayGain(m, 45);
+    a.ok([1,2,5,10,20,50,100,200,500].includes(g), `${m} -> ${g} is not a round gain`);
+  }
+});

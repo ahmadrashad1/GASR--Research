@@ -162,5 +162,25 @@ GASR.horizonLabel = function (k, timing) {
   return `${frames} — between about ${a} and ${b} s at this sequence's recovered frame rate`;
 };
 
+// How much to exaggerate motion so it is visible at projector distance.
+//
+// Over three frames the tissue moves about two pixels in a 640x360 frame, and the
+// methods differ from each other by about one. Drawn at true scale, prediction, truth
+// and baseline all land inside a single dot and the overlay demonstrates nothing.
+// Module 6 reached the same conclusion and records arrow_gain 5 and 100 on its own
+// figures. Exaggeration is honest only when it is declared, so this returns a round
+// number the page prints and a presenter can say out loud, and it never shrinks
+// motion that is already large enough to see.
+GASR.displayGain = function (medianPx, targetPx) {
+  const m = num(medianPx), t = num(targetPx) || 45;
+  if (m === null || m <= 0) return 1;
+  const raw = t / m;
+  if (raw <= 1) return 1;
+  const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+  let best = steps[0];
+  for (const g of steps) if (g <= raw) best = g;
+  return best;
+};
+
 if (typeof module !== 'undefined' && module.exports) module.exports = GASR;
 if (typeof window !== 'undefined') window.GASR = GASR;

@@ -131,9 +131,17 @@ SCENES.strings = {
     'drawn: there is no uncertainty to report, rather than none found.',
 
   uncalibrated:
-    'The overlay is placed using an assumed 75\u00b0 field of view: this sequence has no ' +
-    'recorded camera calibration, so the points sit plausibly on the image rather than ' +
-    'measurably. The geometry and every figure beside it are unaffected.',
+    'The points are placed using the same nominal 75\u00b0 field of view the ' +
+    'reconstruction itself was built with. That figure is the textbook value for a ' +
+    'a standard laparoscope, not a measurement of this one, so the overlay is ' +
+    'consistent with the model rather than calibrated to the real scope. The ' +
+    'geometry and every figure beside it are unaffected.',
+
+  gainNote:
+    'Motion on the video is drawn \u00d7{gain} life size. Over this many frames the ' +
+    'tissue moves about a pixel, and the three answers differ by less than that, so at ' +
+    'true scale they would all sit inside one dot. The exaggeration is applied equally ' +
+    'to every series, so what you are comparing is unchanged.',
 
   legendGt: 'What actually happened',
   legendSigma: 'Spread across sampled futures',

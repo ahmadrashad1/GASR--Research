@@ -256,7 +256,8 @@ t.test('a payload with no horizons list still renders instead of going blank', (
 // the confidence of measured ones.
 function withOverlay(d){
   d = withFrameFiles(d);
-  d.camera = {fx:417.0, fy:417.0, cx:320.0, cy:180.0, W:640, H:360, calibrated:true};
+  d.camera = {fx:503.2, fy:499.7, cx:322.4, cy:178.9, W:640, H:360,
+              calibrated:true, source:'measured'};
   for (const f of d.frames){
     const n = d.n_points;
     const uv = () => { const o = []; for (let i=0;i<n;i++) o.push(0.2 + 0.6*i/n, 0.3 + 0.4*i/n); return o; };
@@ -289,7 +290,7 @@ t.test('an uncalibrated overlay says so rather than passing as measured', () => 
   d.camera.calibrated = false;
   const h = harness(d);
   goTo(h, 'prediction');
-  a.match(h.el('warn').textContent, /not calibrated|uncalibrated|assumed/i,
+  a.match(h.el('warn').textContent, /nominal|not a measurement|assumed/i,
           'a guessed field of view must be declared on screen');
 });
 
@@ -303,4 +304,28 @@ t.test('placeholder mode never draws an overlay', () => {
   const h = harness(null);
   for (let i = 0; i < 7; i++){ h.key('ArrowRight'); }
   a.strictEqual(h.ovlArcs.length, 0, 'invented geometry must not be drawn on imagery');
+});
+
+t.test('an assumed field of view is declared even when the payload claims calibration', () => {
+  // The export already on Drive was written before camera_from learned to detect this,
+  // so it carries calibrated:true over Module 1's nominal 75-degree intrinsics. The
+  // page re-derives the signature rather than trusting the flag, so an existing
+  // payload does not have to be regenerated to stop overclaiming.
+  const d = withOverlay(realPayload());
+  const W = 640;
+  d.camera = {fx: (W/2)/Math.tan(75*Math.PI/360), fy: (W/2)/Math.tan(75*Math.PI/360),
+              cx: 320, cy: 180, W: W, H: 360, calibrated: true};
+  const h = harness(d);
+  goTo(h, 'prediction');
+  a.match(h.el('warn').textContent, /assumed|not .*measured|nominal/i,
+          'a nominal field of view must not pass as a measured one');
+});
+
+t.test('genuinely measured intrinsics raise no camera warning', () => {
+  const d = withOverlay(realPayload());
+  d.camera = {fx: 503.2, fy: 499.7, cx: 322.4, cy: 178.9, W: 640, H: 360,
+              calibrated: true, source: 'measured'};
+  const h = harness(d);
+  goTo(h, 'prediction');
+  a.doesNotMatch(h.el('warn').textContent, /field of view/i);
 });

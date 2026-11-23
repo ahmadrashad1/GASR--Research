@@ -175,7 +175,31 @@ const STR = SCENES.strings;
 function fill(t, k){
   return String(t)
     .replace(/\{horizon\}/g, GASR.horizonLabel(k, null))
-    .replace(/\{points\}/g, D.n_points);
+    .replace(/\{points\}/g, D.n_points)
+    .replace(/\{gain\}/g, overlayGain(k));
+}
+
+// Median tissue motion over this horizon, in pixels of the source frame, and the
+// round factor that lifts it to something visible across a room. Computed once per
+// horizon from the data rather than fixed, so a sequence with larger motion is not
+// exaggerated for no reason.
+const _gain = {};
+function overlayGain(k){
+  if (_gain[k] != null) return _gain[k];
+  let g = 1;
+  const f = D.frames && D.frames[0];
+  if (f && f.px_ctx && f['px_gt' + k] && D.camera){
+    const a = f.px_ctx, b = f['px_gt' + k], W = D.camera.W || 640, H = D.camera.H || 360;
+    const dists = [];
+    for (let i = 0; i < D.n_points; i++){
+      const dx = (b[i*2] - a[i*2]) * W, dy = (b[i*2+1] - a[i*2+1]) * H;
+      dists.push(Math.sqrt(dx*dx + dy*dy));
+    }
+    dists.sort((x, y) => x - y);
+    g = GASR.displayGain(dists[Math.floor(dists.length / 2)], 45);
+  }
+  _gain[k] = g;
+  return g;
 }
 
 const SERIES_LABEL = {
@@ -203,6 +227,20 @@ let yaw = 0.6, pitch = 0.25, zoom = 1;
 // is then EXACTLY cv{k} and sigma{k} is identically zero -- so a halo drawn from it
 // would be a measured-looking cloud around a prediction that is the baseline. Its own
 // comment calls that the most misleading thing the payload could carry.
+// Whether these intrinsics were measured or assumed. The flag alone is not enough:
+// Module 1 always writes camera_meta.json with fx derived from a nominal 75-degree
+// laparoscope FOV, and an export made before that was understood carries
+// calibrated:true over exactly those numbers. Re-deriving the signature here means an
+// existing payload stops overclaiming without being regenerated.
+function measuredCamera(cam){
+  if (!cam || cam.calibrated !== true) return false;
+  if (cam.source && cam.source !== 'measured') return false;
+  const W = Number(cam.W), fx = Number(cam.fx);
+  if (!isFinite(W) || !isFinite(fx) || W <= 0) return false;
+  const nominal = (W / 2) / Math.tan(75 * Math.PI / 360);
+  return Math.abs(fx - nominal) > 1e-4 * Math.max(fx, 1);
+}
+
 function degenerate(k){
   return (D.degenerate_horizons || []).map(String).indexOf(String(k)) !== -1;
 }
@@ -329,11 +367,16 @@ function drawOverlay(){
   const w = iw * fit, h = ih * fit;
   const ox = (box.width - w) / 2, oy = (box.height - h) / 2;
 
+  // Every series is amplified about the last OBSERVED position by the same factor, so
+  // the comparison between them is untouched -- only its scale on screen changes.
+  const gain = overlayGain(K), anchor = f.px_ctx;
   const put = (flat, colour, r) => {
     if (!flat || !flat.length) return;
     o.fillStyle = colour;
     for (let i = 0; i < D.n_points; i++){
-      const u = flat[i*2], v = flat[i*2+1];
+      const au = anchor[i*2], av = anchor[i*2+1];
+      const u = au + (flat[i*2] - au) * gain;
+      const v = av + (flat[i*2+1] - av) * gain;
       if (!isFinite(u) || !isFinite(v)) continue;
       o.beginPath(); o.arc(ox + u * w, oy + v * h, r, 0, 6.2832); o.fill();
     }
@@ -449,10 +492,14 @@ function render(){
 
   const notes = [];
   if (degenerate(K)) notes.push(fill(STR.degenerate, K));
+  if (!PLACEHOLDER && sc.layers.includes('overlay') && D.frames[frame] &&
+      D.frames[frame].px_ctx && overlayGain(K) > 1) {
+    notes.push(fill(STR.gainNote, K));
+  }
   // An overlay drawn from assumed intrinsics is plausible, not measured, and must not
   // reach a projector presented as the latter.
   if (!PLACEHOLDER && sc.layers.includes('overlay') && D.camera &&
-      D.camera.calibrated === false && D.frames[frame] && D.frames[frame].px_ctx) {
+      D.frames[frame] && D.frames[frame].px_ctx && !measuredCamera(D.camera)) {
     notes.push(STR.uncalibrated);
   }
   $('warn').textContent = notes.join(' ');
