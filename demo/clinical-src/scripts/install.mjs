@@ -40,12 +40,43 @@ if (mod) {
     console.error('  Remove the dynamic import or top-level export that caused it.');
     process.exit(1);
   }
-  html = html.replace(/<script type="module"[^>]*>/, '<script>');
+  // Downgrading the tag changes WHEN the script runs, not only how it parses, and the
+  // tag has to move with it.
+  //
+  // Vite hoists the entry script into <head>. That is safe for a module script and
+  // only for a module script, because a module script is deferred: it runs after the
+  // document has been parsed. A classic script in <head> runs the instant the parser
+  // reaches it -- before <div id="root"> exists -- so createRoot() is handed null,
+  // React throws, and the page renders nothing at all. Over file:// and over http
+  // alike: it is not a file:// problem, it is a document-order problem.
+  //
+  // The deferral cannot be bought back with an attribute, either. `defer` is defined
+  // only for scripts with a src and is ignored on an inline one. So the script is
+  // moved to the end of <body>, which is the one place a classic script can go.
+  //
+  // The replacement is a function because the minified bundle contains `$&` and `$'`
+  // sequences, which String.replace would otherwise expand as references.
+  html = html.replace(mod[0], '');
+  html = html.replace('</body>', () => `<script>${js}</script>\n</body>`);
 }
 
 const faults = [];
 if (/<script[^>]+type\s*=\s*["']module["']/.test(html)) {
   faults.push('still contains a module script, which file:// refuses to load');
+}
+// Document order, checked on the finished file rather than assumed from the move above.
+//
+// This is the failure that actually shipped: a classic script in <head> mounting into
+// a <div id="root"> the parser had not reached yet. It is worth asserting here because
+// it is invisible to every other check -- the file is self-contained, loads nothing,
+// contains no module syntax, and comes up blank.
+const rootAt = html.indexOf('id="root"');
+const mountAt = html.search(/getElementById\(\s*["'`]root["'`]\s*\)/);
+if (rootAt < 0) {
+  faults.push('has no <div id="root"> for the app to mount into');
+} else if (mountAt >= 0 && mountAt < rootAt) {
+  faults.push('the bundle runs before <div id="root"> is parsed, so createRoot() gets '
+    + 'null and the page renders nothing -- move the script to the end of <body>');
 }
 if (/<script[^>]+\bsrc\s*=\s*["'](?!demo_data\.js)/.test(html)) {
   faults.push('references an external script; the bundle must be self-contained');

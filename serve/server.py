@@ -213,8 +213,18 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.split('?')[0] == '/api/health':
+        path = self.path.split('?')[0]
+        if path == '/api/health':
             return self._json(self.live.health())
+        # Chrome asks every origin for a favicon. There isn't one, and the 404 it gets
+        # is the only error in the console on an otherwise clean run -- which is worth
+        # a line of code to remove, because a panel member who opens the developer
+        # console during a viva should find nothing there to ask about.
+        if path == '/favicon.ico':
+            self.send_response(204)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
         return super().do_GET()
 
     def do_POST(self):

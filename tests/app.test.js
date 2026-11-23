@@ -20,6 +20,26 @@ t.test('the built page loads no module script', () => {
   a.doesNotMatch(html, /<script[^>]+type\s*=\s*["']module["']/);
 });
 
+t.test('the bundle runs after the element it mounts into exists', () => {
+  // This one shipped. The build downgrades Vite's <script type="module"> to a classic
+  // script so file:// will run it, but Vite had hoisted that tag into <head>, where
+  // being deferred was the only thing making it safe. A classic script in <head> runs
+  // the moment the parser reaches it -- before <div id="root"> -- so createRoot() got
+  // null, React threw, and the page rendered nothing at all. Not on file:// only: over
+  // http too. It was invisible to every other check here, because the file was still
+  // self-contained, still loaded nothing, and still had no module syntax.
+  //
+  // `defer` cannot fix it: the attribute is defined only for scripts with a src and is
+  // ignored on an inline one. The script has to physically follow the div.
+  const rootAt = html.indexOf('id="root"');
+  const mountAt = html.search(/getElementById\(\s*["'`]root["'`]\s*\)/);
+  a.notStrictEqual(rootAt, -1, 'the page has no <div id="root"> to mount into');
+  a.notStrictEqual(mountAt, -1, 'the bundle never mounts into #root');
+  a.ok(mountAt > rootAt,
+       `the bundle runs at offset ${mountAt}, before #root at ${rootAt}: createRoot() ` +
+       'would be handed null and the page would come up blank');
+});
+
 t.test('the built page loads nothing from the network', () => {
   const loads = html.match(/(?:\bsrc|\bhref)\s*=\s*["']https?:\/\/[^"']+/gi) || [];
   a.deepStrictEqual(loads.filter(u => !/w3\.org/.test(u)), [],
