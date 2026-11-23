@@ -1,0 +1,785 @@
+import torch, torch.nn as nn, torch.nn.functional as F
+import numpy as np, os, math, json, time, copy, itertools
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# ════════════════════════════════════════════════════════════════════
+# MODULE 8 — HYPERPARAMETER AND OPTIMISATION STUDY
+#
+# Four studies, ordered by cost. Each answers a question a reviewer will ask about a
+# result that currently does not beat its baselines: did you actually tune this, or did
+# you train one configuration and report it?
+#
+#   A. INFERENCE COST vs ACCURACY   no retraining      ~20 min
+#      How many denoising steps and averaged samples does the trained model actually
+#      need? Produces a Pareto curve, which is the honest way to report a generative
+#      model's accuracy: a single number hides that accuracy is purchased with compute.
+#
+#   B. CONTEXT LENGTH               cheap retraining   ~10 min
+#      Does showing the model more past frames help? Tested by truncating the existing
+#      windows to the last W' frames, so no Module 4 re-run is needed. If accuracy is
+#      flat from 2 to 4 frames, widening the window further is not where the limit is.
+#
+#   C. OPTIMISATION SENSITIVITY     cheap retraining   ~30 min
+#      One-factor-at-a-time sweeps around a reference configuration: optimiser, learning
+#      rate, schedule, weight decay, batch size. Run on the deterministic Transformer
+#      backbone, which trains in about a minute, so the grid is affordable. OFAT rather
+#      than a full grid because the deliverable is a sensitivity ranking -- which knobs
+#      matter -- not a single best cell.
+#
+#   D. DIFFUSION ABLATIONS          expensive          hours, opt-in
+#      The choices specific to the generative formulation, which cannot be transferred
+#      from a deterministic backbone: prediction parameterisation, Min-SNR weighting,
+#      target formulation, horizon conditioning, capacity. Run at reduced budget on a
+#      fraction of the data, which is valid here because Module 5's best checkpoint
+#      occurred near epoch 60 -- well inside a short proxy run.
+#
+# EVERY study reports Mean Point Error on the same held-out windows as Modules 6 and 7,
+# so all three modules' numbers sit in one table.
+# ════════════════════════════════════════════════════════════════════
+
+# DRIVE_BASE and the Drive mount come from the setup cell at the top of the
+# notebook. Recreate them here if this cell is the first thing run in a fresh
+# runtime: a NameError sixty lines in costs a session for nothing.
+if 'DRIVE_BASE' not in globals():
+    DRIVE_BASE = '/content/drive/MyDrive/EndoGaussian'
+    if not os.path.isdir(DRIVE_BASE):
+        from google.colab import drive
+        drive.mount('/content/drive')
+    assert os.path.isdir(DRIVE_BASE), f'Drive mounted, but {DRIVE_BASE} is absent'
+    print(f'DRIVE_BASE recovered locally -> {DRIVE_BASE}')
+
+COMBINED_DIR = f'{DRIVE_BASE}/module4_combined'
+MODULE5_DIR  = f'{DRIVE_BASE}/module5'
+MODULE8_DIR  = f'{DRIVE_BASE}/module8'
+CKPT_BEST    = f'{MODULE5_DIR}/diffusion_ckpt_best.pth'
+CKPT_LATEST  = f'{MODULE5_DIR}/diffusion_ckpt.pth'
+os.makedirs(MODULE8_DIR, exist_ok=True)
+
+# Studies A and B completed on 19 November 2026 and their results are in
+# module8_hpo.json on Drive, which this cell reloads at startup -- so turning them off
+# here does NOT drop them from the output or the figure. Only re-enable one to re-measure
+# it. Study A cost 8.3 h and Study B 6.0 h; neither needs repeating.
+RUN_A, RUN_B, RUN_C = False, False, True
+RUN_D = False            # opt-in: retrains the diffusion model once per ablation. The
+                          # budget is printed before anything starts -- read it first.
+
+# ── Study A: inference cost/accuracy ─────────────────────────────────
+A_STEPS   = [2, 5, 10, 20, 50]
+A_SAMPLES = [1, 2, 4, 8]
+A_SUBSET  = 480          # held-out windows per cell. The full set x 20 cells would be
+                          # hours of sampling for a curve whose shape is already clear at
+                          # a third of the data; the final table uses the full set
+
+# ── Study B/C: cheap backbone ────────────────────────────────────────
+BACKBONE_EPOCHS = 40
+BACKBONE_HIDDEN = 256
+BACKBONE_BATCH  = 32     # reference batch AT W=4. Activation memory scales with
+                          # batch x N_ANCHOR x window, so a fixed 32 would be 16x the
+                          # W=4 footprint once the window is 32 and would OOM a T4
+                          # before Study B produced a single number. batch_for_window()
+                          # holds that product constant instead, which also keeps the
+                          # narrow configs fast rather than crippling them to suit the
+                          # widest one.
+BACKBONE_LR     = 1e-3
+# ── Study C: budget ──────────────────────────────────────────────────
+# Study C trains 16 backbones. At the full 32-frame window that is 16 x the 10,242 s
+# Study B measured there -- about 45 h, which is not a study, it is a weekend. It runs
+# at a narrower window and a shorter schedule instead, because Study C measures the
+# RELATIVE sensitivity to optimiser, learning rate, schedule, decay, batch, width and
+# depth, and that ordering is what transfers -- not the absolute MPE of each cell.
+C_WINDOW = 4             # Study B's measured cost per 40-epoch run: W=4 2156s, W=8
+                          # 3389s, W=16 5780s, W=32 10242s. At W=8 the 16 runs come to
+                          # 4.5 h; at W=4, 2.9 h. W=4 also sits closer to W=8 (the best
+                          # window) in MPE than W=32 does, so nothing is gained by
+                          # probing the widest.
+C_EPOCHS = 12            # against BACKBONE_EPOCHS=40. Cutting epochs is the RISKIER of
+                          # the two levers here -- a short schedule systematically
+                          # favours fast-converging settings, which is exactly what the
+                          # optimiser and learning-rate rows measure -- so the window is
+                          # cut harder and this is kept high enough for SGD and the small
+                          # learning rates to move. Read Study C as sensitivity at a
+                          # fixed budget, which is what the output JSON records. The
+                          # budget printed before training starts comes from Study B's
+                          # measured seconds, not from this comment.
+
+B_WINDOWS = [4, 8, 16, 32]   # truncations of the 32-frame context. This is the cheap
+                              # test of whether the longer window was worth rebuilding
+                              # Module 4 for: minutes per config on the small backbone,
+                              # against ~40h for the equivalent diffusion retrain.
+
+# ── Study D: diffusion ablations ─────────────────────────────────────
+D_EPOCHS        = 25
+D_TRAIN_FRAC    = 0.40
+D_BATCH         = 16     # effective batch, preserved by accumulation over D_MICRO
+D_MICRO         = 2      # rows per forward/backward. The denoiser sees
+                          # batch x N_ANCHOR x W token positions, the same quantity that
+                          # forced Module 5's MICRO_BATCH down to 2 at W=32. Without the
+                          # split, Study D OOMs on its first config; without preserving
+                          # the effective batch, it would screen at batch 2 and rank
+                          # configs on gradient noise rather than on the configs.
+D_LR            = 5e-4
+D_PROMOTE_TOP   = 2      # best configs are re-run at full budget, a two-rung successive
+D_PROMOTE_EPOCH = 75     # halving: cheap screening, then a fair comparison of finalists
+
+SEED = 11
+torch.manual_seed(SEED); np.random.seed(SEED)
+
+print('=' * 72)
+print('  MODULE 8 — Hyperparameter and Optimisation Study')
+print('=' * 72)
+
+# ════════════════════════════════════════════════════════════════════
+# DATA — identical windows and split to Modules 5-7
+# ════════════════════════════════════════════════════════════════════
+def _load(split):
+    g = lambda n: np.load(f'{COMBINED_DIR}/{split}_{n}.npy')
+    return {'inp': g('inputs').astype(np.float32), 'tgt': g('targets').astype(np.float32),
+            'delta': g('deltas').astype(np.float32), 'dnorm': g('disp_norm').astype(np.float32),
+            'ps': g('pred_step').astype(np.int64)}
+
+tr, va = _load('train'), _load('val')
+M_tr, W_FULL, N_A, _ = tr['inp'].shape
+M_va = len(va['inp'])
+PRED_STEPS = sorted(set(np.unique(tr['ps']).tolist()))
+BASE_SCALE = float(1.0 / (tr['delta'].std() + 1e-8))
+T = {k: torch.from_numpy(v).to(DEVICE) for k, v in tr.items()}
+V = {k: torch.from_numpy(v).to(DEVICE) for k, v in va.items()}
+
+print(f'  Device {DEVICE} · train {M_tr:,} · val {M_va:,} · points {N_A} · context {W_FULL}')
+
+
+def mean_point_error(pred, gt):
+    return (pred - gt).norm(dim=-1).mean(dim=-1)
+
+
+def chamfer_distance(pred, gt):
+    d = torch.cdist(pred, gt)
+    return d.min(dim=2)[0].mean(dim=1) + d.min(dim=1)[0].mean(dim=1)
+
+
+def to_physical(delta_eq, dnorm):
+    return delta_eq / dnorm[:, None, None]
+
+
+def const_velocity_delta(ctx, k):
+    return (ctx[:, -1] - ctx[:, -2]) * k[:, None, None].to(ctx.dtype)
+
+
+# ════════════════════════════════════════════════════════════════════
+# DETERMINISTIC BACKBONE — the vehicle for studies B and C
+# Same shape as the diffusion model's temporal encoder, minus the generative part, so
+# conclusions about optimisation transfer while each run costs about a minute.
+# ════════════════════════════════════════════════════════════════════
+def batch_for_window(window):
+    """Hold batch x window constant at the W=4 reference, so every Study B config runs
+    at the same activation footprint instead of the widest one deciding for all."""
+    return max(2, BACKBONE_BATCH * 4 // max(1, window))
+
+
+class Backbone(nn.Module):
+    def __init__(self, hidden=BACKBONE_HIDDEN, layers=3, heads=8, window=W_FULL):
+        super().__init__()
+        self.window = window
+        self.inp = nn.Linear(3, hidden)
+        self.pe = nn.Parameter(torch.randn(window, hidden) * 0.02)
+        lay = nn.TransformerEncoderLayer(hidden, heads, hidden * 2, dropout=0.1,
+                                         activation='gelu', batch_first=True, norm_first=True)
+        self.tf = nn.TransformerEncoder(lay, layers, enable_nested_tensor=False)
+        self.head = nn.Sequential(nn.Linear(hidden + 1, hidden), nn.GELU(),
+                                  nn.Linear(hidden, 3))
+
+    def forward(self, ctx, k):
+        ctx = ctx[:, -self.window:]                       # truncation = shorter context
+        rel = (ctx - ctx[:, -1:]).permute(0, 2, 1, 3)
+        B, N, Wn, _ = rel.shape
+        h = self.inp(rel.reshape(B * N, Wn, 3)) + self.pe[None]
+        h = self.tf(h)[:, -1].reshape(B, N, -1)
+        kk = k.to(ctx.dtype)[:, None, None].expand(-1, N, 1)
+        return self.head(torch.cat([h, kk], dim=-1))
+
+
+@torch.no_grad()
+def eval_backbone(model, batch=64):
+    model.eval()
+    tot, n = 0.0, 0
+    for bi in range(0, M_va, batch):
+        sl = slice(bi, min(bi + batch, M_va))
+        pred = V['inp'][sl][:, -1] + to_physical(model(V['inp'][sl], V['ps'][sl]) / BASE_SCALE,
+                                                 V['dnorm'][sl])
+        e = mean_point_error(pred, V['tgt'][sl])
+        tot += e.sum().item(); n += len(e)
+    return tot / max(n, 1)
+
+
+def train_backbone(window=W_FULL, hidden=BACKBONE_HIDDEN, layers=3, epochs=BACKBONE_EPOCHS,
+                   lr=BACKBONE_LR, wd=1e-2, batch=BACKBONE_BATCH, optim='adamw',
+                   schedule='cosine'):
+    model = Backbone(hidden=hidden, layers=layers, window=window).to(DEVICE)
+    if optim == 'adamw':
+        opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+    elif optim == 'adam':
+        opt = torch.optim.Adam(model.parameters(), lr=lr)
+    else:
+        opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+    if schedule == 'cosine':
+        sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs, eta_min=1e-6)
+    elif schedule == 'step':
+        sch = torch.optim.lr_scheduler.StepLR(opt, max(1, epochs // 3), 0.3)
+    else:
+        sch = torch.optim.lr_scheduler.ConstantLR(opt, 1.0, total_iters=1)
+    rng = np.random.default_rng(SEED)
+    best = float('inf')
+    t0 = time.time()
+    for ep in range(epochs):
+        model.train()
+        perm = rng.permutation(M_tr)
+        for bi in range(0, M_tr - batch + 1, batch):
+            sl = perm[bi:bi + batch]
+            loss = F.mse_loss(model(T['inp'][sl], T['ps'][sl]), T['delta'][sl] * BASE_SCALE)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+        sch.step()
+        if (ep + 1) % 5 == 0 or ep == epochs - 1:
+            best = min(best, eval_backbone(model))
+    return best, time.time() - t0, sum(p.numel() for p in model.parameters())
+
+
+# ════════════════════════════════════════════════════════════════════
+# DIFFUSION MODEL — needed by study A (loading) and study D (training)
+# ════════════════════════════════════════════════════════════════════
+class GeomMLP(nn.Module):
+    def __init__(self, in_dim, hidden, out_dim, dropout):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, hidden), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden, hidden), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden, hidden), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden, out_dim))
+
+    def forward(self, x):
+        return self.net(x)
+
+
+def sinusoidal_embedding(t, dim):
+    half = dim // 2
+    f = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device).float() / half)
+    a = t.float()[:, None] * f[None]
+    e = torch.cat([torch.sin(a), torch.cos(a)], dim=-1)
+    return F.pad(e, (0, 1)) if dim % 2 else e
+
+
+class ConditionalDenoiser(nn.Module):
+    def __init__(self, window_size=4, latent_dim=512, hidden_dim=1024, n_heads=8,
+                 n_tf_layers=3, dropout=0.1, max_pred_step=8, use_horizon=True):
+        super().__init__()
+        D = latent_dim
+        self.use_horizon = use_horizon
+        self.context_geo = GeomMLP(6, hidden_dim, D, dropout)
+        # Overwritten by load_state_dict -- see Module 5's encode_context.
+        self.register_buffer('ctx_scale', torch.tensor(1.0))
+        self.target_geo = GeomMLP(3, hidden_dim, D, dropout)
+        self.temporal_pe = nn.Parameter(torch.randn(window_size, D) * 0.02)
+        lay = nn.TransformerEncoderLayer(D, n_heads, hidden_dim, dropout=dropout,
+                                         activation='gelu', batch_first=True, norm_first=True)
+        self.temporal_transformer = nn.TransformerEncoder(lay, n_tf_layers,
+                                                          enable_nested_tensor=False)
+        self.time_mlp = nn.Sequential(nn.Linear(D, D), nn.GELU(), nn.Linear(D, D))
+        self.horizon_emb = nn.Embedding(max_pred_step + 1, D)
+        self.horizon_mlp = nn.Sequential(nn.Linear(D, D), nn.GELU(), nn.Linear(D, D))
+        self.cross_t2c = nn.MultiheadAttention(D, n_heads, dropout=dropout, batch_first=True)
+        self.cross_c2t = nn.MultiheadAttention(D, n_heads, dropout=dropout, batch_first=True)
+        self.norm_t, self.norm_c = nn.LayerNorm(D), nn.LayerNorm(D)
+        self.output_mlp = nn.Sequential(
+            nn.Linear(2 * D, hidden_dim), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim // 2), nn.GELU(),
+            nn.Linear(hidden_dim // 2, 3))
+
+    def forward(self, ctx, x_noisy, t, hstep):
+        # Modules 6, 7 and 8 load Module 4's full-width window, which may be wider
+        # than this model was trained on. Take the most recent frames here, so the
+        # checkpoint is always fed the context it actually saw in training and no
+        # caller has to remember to slice.
+        _w = self.temporal_pe.shape[0]
+        if ctx.shape[1] > _w:
+            ctx = ctx[:, -_w:]
+        B, Wn, N, _ = ctx.shape
+        # Motion relative to the last frame, plus that frame's absolute position.
+        # Must match Module 5's encode_context exactly or the checkpoint is being
+        # fed a different input representation than it was trained on.
+        last = ctx[:, -1:]
+        feat = torch.cat([(ctx - last) * self.ctx_scale,
+                          last.expand(-1, Wn, -1, -1)], dim=-1)
+        h = self.context_geo(feat) + self.temporal_pe[None, :, None, :]
+        h = h.permute(0, 2, 1, 3).reshape(B * N, Wn, -1)
+        c = self.temporal_transformer(h)[:, -1, :].reshape(B, N, -1)
+        g = self.target_geo(x_noisy)
+        g = g + self.time_mlp(sinusoidal_embedding(t, g.shape[-1]))[:, None, :]
+        if self.use_horizon:
+            # the ablation that removes horizon conditioning removes it from BOTH branches,
+            # restoring the ambiguous objective Module 5 originally had
+            he = self.horizon_mlp(self.horizon_emb(hstep))[:, None, :]
+            c, g = c + he, g + he
+        a, _ = self.cross_t2c(g, c, c)
+        g2 = self.norm_t(g + a)
+        b, _ = self.cross_c2t(c, g, g)
+        c2 = self.norm_c(c + b)
+        return self.output_mlp(torch.cat([g2, c2], dim=-1))
+
+
+def cosine_beta_schedule(T_, s=0.008):
+    x = torch.linspace(0, T_, T_ + 1)
+    ac = torch.cos(((x / T_) + s) / (1 + s) * math.pi * 0.5) ** 2
+    return torch.clip(1 - ((ac / ac[0])[1:] / (ac / ac[0])[:-1]), 1e-4, 0.999)
+
+
+class Diffusion:
+    """Schedule plus the three prediction parameterisations, so study D can switch between
+    them without touching the model: eps predicts the noise, x0 the clean target, and v the
+    diffusion velocity (Salimans & Ho). Which one is best is empirical and the reason the
+    ablation exists."""
+    def __init__(self, T_=500, param='v', min_snr=5.0):
+        self.T, self.param, self.min_snr = T_, param, min_snr
+        ac = torch.cumprod(1.0 - cosine_beta_schedule(T_), 0).to(DEVICE)
+        self.ac, self.sq, self.sq1 = ac, torch.sqrt(ac), torch.sqrt(1 - ac)
+        snr = ac / (1 - ac)
+        self.w = (torch.minimum(snr, torch.full_like(snr, min_snr)) / (snr + 1)
+                  if math.isfinite(min_snr) else torch.ones_like(snr))
+
+    def target(self, x0, noise, t):
+        a, b = self.sq[t][:, None, None], self.sq1[t][:, None, None]
+        return {'eps': noise, 'x0': x0, 'v': a * noise - b * x0}[self.param]
+
+    def to_x0(self, x_t, out, t):
+        a, b = self.sq[t][:, None, None], self.sq1[t][:, None, None]
+        if self.param == 'x0':
+            return out
+        if self.param == 'eps':
+            return (x_t - b * out) / a.clamp_min(1e-8)
+        return a * x_t - b * out
+
+    def to_eps(self, x_t, out, t):
+        a, b = self.sq[t][:, None, None], self.sq1[t][:, None, None]
+        if self.param == 'eps':
+            return out
+        if self.param == 'x0':
+            return (x_t - a * out) / b.clamp_min(1e-8)
+        return b * x_t + a * out
+
+
+@torch.no_grad()
+def ddim(model, diff, ctx, k, steps, n_samples=1, eta=0.0):
+    B, N = ctx.shape[0], ctx.shape[2]
+    c = ctx.repeat_interleave(n_samples, 0) if n_samples > 1 else ctx
+    h = k.repeat_interleave(n_samples, 0) if n_samples > 1 else k
+    rows = c.shape[0]
+    ts = torch.linspace(diff.T - 1, 0, steps, device=DEVICE).long()
+    x = torch.randn(rows, N, 3, device=DEVICE)
+    for i, t in enumerate(ts):
+        tb = t.expand(rows)
+        out = model(c, x, tb, h)
+        x0 = diff.to_x0(x, out, tb)
+        if i == len(ts) - 1:
+            x = x0
+            break
+        eps = diff.to_eps(x, out, tb)
+        a_t, a_n = diff.ac[t], diff.ac[ts[i + 1]]
+        sig = eta * torch.sqrt((1 - a_n) / (1 - a_t)) * torch.sqrt(1 - a_t / a_n)
+        x = (torch.sqrt(a_n) * x0
+             + torch.sqrt(torch.clamp(1 - a_n - sig ** 2, min=0.0)) * eps)
+        if eta > 0:
+            x = x + sig * torch.randn_like(x)
+    return x.view(B, n_samples, N, 3).mean(1) if n_samples > 1 else x
+
+
+# Studies are expensive and they crash: Study C hit an OOM on 19 November after Studies
+# A and B had already cost 14.3 h, and because the only json.dump sat at the very end of
+# the cell, all of it was lost. Results are now reloaded from the last run and written
+# back after EVERY study, so a later failure costs one study instead of all of them.
+RESULTS_PATH = f'{MODULE8_DIR}/module8_hpo.json'
+results = {}
+if os.path.exists(RESULTS_PATH):
+    try:
+        results = json.load(open(RESULTS_PATH)).get('results', {}) or {}
+        # JSON stringifies B_context's integer window keys. Restore them, or sorted()
+        # orders them lexically ('16','32','4','8') and the Study B panel plots nonsense.
+        if isinstance(results.get('B_context'), dict):
+            results['B_context'] = {int(k): v for k, v in results['B_context'].items()}
+        print(f'  Resuming        : {len(results)} study block(s) loaded from '
+              f'{RESULTS_PATH}')
+        for _k in sorted(results):
+            print(f'                    · {_k}')
+    except Exception as _e:
+        print(f'  ⚠️  {RESULTS_PATH} unreadable ({_e}); starting with none. It will be '
+              f'overwritten.')
+
+def save_results(stage):
+    """Write everything gathered so far. Called after each study, so an OOM or a
+    disconnect in a later study cannot discard an earlier one."""
+    json.dump({'config': {'backbone_epochs': BACKBONE_EPOCHS, 'seed': SEED,
+                          'a_subset': A_SUBSET, 'a_steps': A_STEPS,
+                          'a_samples': A_SAMPLES, 'b_windows': B_WINDOWS,
+                          'c_window': C_WINDOW, 'c_epochs': C_EPOCHS,
+                          'd_epochs': D_EPOCHS, 'd_micro': D_MICRO,
+                          'd_fraction': D_TRAIN_FRAC, 'val_windows': M_va},
+               'results': results},
+              open(RESULTS_PATH, 'w'), indent=2)
+    print(f'    ✅ saved after {stage} -> {RESULTS_PATH}')
+
+# ════════════════════════════════════════════════════════════════════
+# STUDY A — inference cost vs accuracy, on the trained model
+# ════════════════════════════════════════════════════════════════════
+if RUN_A:
+    path = CKPT_BEST if os.path.exists(CKPT_BEST) else CKPT_LATEST
+    if not os.path.exists(path):
+        print('\n  ⚠️  Study A skipped: no Module 5 checkpoint.')
+        RUN_A = False
+    else:
+        ck = torch.load(path, map_location=DEVICE, weights_only=False)
+        arch = ck['arch_cfg']
+        # Existence is not compatibility. After Module 4 is rebuilt at a new window, or
+        # after the context encoder changed shape, the checkpoint still sitting on Drive
+        # is stale -- and load_state_dict would raise a size mismatch halfway into a
+        # session rather than skipping. Check before loading and say which it is.
+        _why = None
+        if arch.get('CTX_MODE') != 'rel6':
+            _why = ("trained on raw absolute coordinates (no CTX_MODE); the context encoder "
+                    "now takes 6 channels")
+        elif arch.get('WINDOW_SIZE') != W_FULL:
+            _why = f"trained at W={arch.get('WINDOW_SIZE')}, dataset is W={W_FULL}"
+        if _why is not None:
+            print(f'\n  ⚠️  Study A skipped: {os.path.basename(path)} is incompatible '
+                  f'-- {_why}.\n      Re-run Module 5, then Study A. Studies B and C do not '
+                  f'need a checkpoint and still run.')
+            RUN_A = False
+        else:
+            m = ConditionalDenoiser(arch['WINDOW_SIZE'], arch['LATENT_DIM'], arch['HIDDEN_DIM'],
+                                    arch['N_HEADS'], arch['N_TF_LAYERS'], 0.1,
+                                    arch.get('MAX_PRED_STEP', 8)).to(DEVICE)
+            m.load_state_dict(ck['ema']); m.eval()
+            diff = Diffusion(arch['T_DIFF'], 'v', 5.0)
+            scale, mode = ck['config']['DATA_SCALE'], arch.get('TARGET_MODE', 'delta')
+            idx = np.linspace(0, M_va - 1, min(A_SUBSET, M_va)).astype(int)
+            print(f'\n  STUDY A — inference cost vs accuracy '
+                  f'({len(idx)} windows, checkpoint epoch {ck.get("epoch", "?")})')
+            grid = {}
+            for steps, ns in itertools.product(A_STEPS, A_SAMPLES):
+                rows = max(1, 64 // ns)
+                tot, n, t0 = 0.0, 0, time.time()
+                for bi in range(0, len(idx), rows):
+                    sl = idx[bi:bi + rows]
+                    ctx, k, dn = V['inp'][sl], V['ps'][sl], V['dnorm'][sl]
+                    d_eq = ddim(m, diff, ctx, k, steps, ns) / scale
+                    if mode == 'cv_residual':
+                        d_eq = d_eq + const_velocity_delta(ctx, k) * dn[:, None, None]
+                    pred = ctx[:, -1] + to_physical(d_eq, dn)
+                    e = mean_point_error(pred, V['tgt'][sl])
+                    tot += e.sum().item(); n += len(e)
+                grid[f'{steps}x{ns}'] = {'steps': steps, 'samples': ns, 'mpe': tot / n,
+                                         'forward_passes': steps * ns,
+                                         'seconds': time.time() - t0}
+            results['A_inference'] = grid
+            print(f'    {"steps":>6} {"samples":>8} {"fwd":>6} {"MPE":>11} {"sec":>7}')
+            for key, g in sorted(grid.items(), key=lambda kv: kv[1]['mpe']):
+                print(f'    {g["steps"]:>6} {g["samples"]:>8} {g["forward_passes"]:>6} '
+                      f'{g["mpe"]:>11.6f} {g["seconds"]:>7.1f}')
+            bestA = min(grid.values(), key=lambda g: g['mpe'])
+            # the cheapest cell within 1% of the best is the operating point worth reporting:
+            # anything beyond it buys accuracy below the noise floor at real compute cost
+            knee = min((g for g in grid.values() if g['mpe'] <= bestA['mpe'] * 1.01),
+                       key=lambda g: g['forward_passes'])
+            results['A_best'], results['A_knee'] = bestA, knee
+            print(f'    best {bestA["steps"]}x{bestA["samples"]} MPE {bestA["mpe"]:.6f}; '
+                  f'knee (within 1%) {knee["steps"]}x{knee["samples"]} at '
+                  f'{knee["forward_passes"]} forward passes '
+                  f'({bestA["forward_passes"] / knee["forward_passes"]:.1f}x cheaper)')
+            save_results('Study A')
+
+# ════════════════════════════════════════════════════════════════════
+# STUDY B — context length
+# ════════════════════════════════════════════════════════════════════
+if RUN_B:
+    print(f'\n  STUDY B — context length (truncating the {W_FULL}-frame window)')
+    out = {}
+    for w in B_WINDOWS:
+        mpe, secs, par = train_backbone(window=w, batch=batch_for_window(w))
+        out[w] = {'mpe': mpe, 'seconds': secs, 'parameters': par}
+        print(f'    W={w}  MPE {mpe:.6f}  ({secs:.0f}s)')
+    results['B_context'] = out
+    ws = sorted(out)
+    gain = (out[ws[0]]['mpe'] - out[ws[-1]]['mpe']) / out[ws[0]]['mpe'] * 100
+    best_w = min(out, key=lambda w: out[w]['mpe'])
+    print(f'    going from W={ws[0]} to W={ws[-1]} changes MPE by {gain:+.1f}% '
+          f'(positive = wider is better)')
+    print(f'    best window tried: W={best_w}  MPE {out[best_w]["mpe"]:.6f}')
+    if abs(gain) < 2:
+        print('    → essentially flat: the model is not limited by how much past it sees,'
+              '\n      so widening the window further is unlikely to be where the gain is.')
+    elif gain > 0:
+        print('    → context length matters measurably and wider is better; a Module 4'
+              '\n      re-run at larger W is worth testing.')
+    else:
+        # The original branch recommended widening whenever |gain| >= 2, so on a negative
+        # gain it advised the exact opposite of what had just been measured.
+        print(f'    → WIDER IS WORSE: W={ws[-1]} is {abs(gain):.1f}% worse than W={ws[0]},'
+              f'\n      and W={best_w} is the best of those tried. The deployed model is '
+              f'trained at\n      W={W_FULL} -- report this as the ablation result it is, '
+              f'not as support\n      for that choice.')
+    save_results('Study B')
+
+# ════════════════════════════════════════════════════════════════════
+# STUDY C — optimisation sensitivity, one factor at a time
+# ════════════════════════════════════════════════════════════════════
+if RUN_C:
+    print('\n  STUDY C — optimisation sensitivity (one factor at a time)')
+
+    # The reference MUST size its batch for the window it actually runs at. The original
+    # passed batch=BACKBONE_BATCH (32, the W=4 reference) while defaulting window=W_FULL
+    # (32), i.e. 8x the activation footprint batch_for_window() was written to hold
+    # constant -- and it OOMed on the very first training, before a single number.
+    C_BATCH = batch_for_window(C_WINDOW)
+    ref = dict(optim='adamw', lr=BACKBONE_LR, schedule='cosine', wd=1e-2,
+               batch=C_BATCH, hidden=BACKBONE_HIDDEN, layers=3,
+               window=C_WINDOW, epochs=C_EPOCHS)
+
+    # A batch is only admissible if batch x points x window stays inside the footprint
+    # Study B already proved safe, doubled -- the backbone is far lighter per token than
+    # the diffusion model, but 'vary the batch' must not mean 'OOM at the top value'.
+    C_TOKEN_CAP = 2 * BACKBONE_BATCH * 4 * N_A
+
+    def c_batch_values(ref_batch):
+        cand = [max(2, ref_batch // 2), ref_batch * 2]
+        keep, drop = [], []
+        for b in dict.fromkeys(cand):
+            if b == ref_batch:
+                continue
+            (keep if b * N_A * C_WINDOW <= C_TOKEN_CAP else drop).append(b)
+        for b in drop:
+            print(f'    batch={b} skipped: {b * N_A * C_WINDOW:,} token positions exceeds '
+                  f'the {C_TOKEN_CAP:,} cap')
+        return keep
+
+    factors = {
+        'optimiser':     ('optim', ['adam', 'sgd']),
+        'learning rate': ('lr', [1e-4, 3e-4, 3e-3]),
+        'schedule':      ('schedule', ['constant', 'step']),
+        'weight decay':  ('wd', [0.0, 5e-2]),
+        'batch size':    ('batch', c_batch_values(C_BATCH)),
+        'width':         ('hidden', [128, 512]),
+        'depth':         ('layers', [1, 6]),
+    }
+
+    # Budget, from Study B's own measured seconds at this window rather than a guess.
+    _n_runs = 1 + sum(len(v) for _, v in factors.values())
+    _b = results.get('B_context') or {}
+    _b_secs = next((_b[k].get('seconds') for k in (C_WINDOW, str(C_WINDOW)) if k in _b),
+                   None)
+    if _b_secs:
+        _est = _n_runs * (_b_secs / BACKBONE_EPOCHS) * C_EPOCHS
+        print(f'    budget: {_n_runs} backbones at W={C_WINDOW}, {C_EPOCHS} epochs each '
+              f'≈ {_est / 3600:.1f} h\n            (Study B measured {_b_secs:.0f}s for '
+              f'{BACKBONE_EPOCHS} epochs at W={C_WINDOW}; width and depth variants move '
+              f'this either way)')
+    else:
+        print(f'    budget: {_n_runs} backbones at W={C_WINDOW}, {C_EPOCHS} epochs each. '
+              f'No Study B timing for W={C_WINDOW} to estimate from.')
+
+    ref_mpe, ref_s, _ = train_backbone(**ref)
+    print(f'    reference {ref} -> MPE {ref_mpe:.6f} ({ref_s:.0f}s)')
+    sens = {}
+    for label, (key, values) in factors.items():
+        rows = [{'value': ref[key], 'mpe': ref_mpe, 'reference': True}]
+        for v in values:
+            cfg = dict(ref); cfg[key] = v
+            mpe, secs, _ = train_backbone(**cfg)
+            rows.append({'value': v, 'mpe': mpe, 'seconds': secs, 'reference': False})
+            print(f'    {label:<15} {key}={v!r:<10} MPE {mpe:.6f}')
+        spread = (max(r['mpe'] for r in rows) - min(r['mpe'] for r in rows)) / ref_mpe * 100
+        sens[label] = {'key': key, 'rows': rows, 'spread_pct': spread}
+    results['C_optimisation'] = {'reference': {**ref, 'mpe': ref_mpe},
+                                 'window': C_WINDOW, 'epochs': C_EPOCHS,
+                                 'note': (f'Run at W={C_WINDOW} over {C_EPOCHS} epochs, '
+                                          f'not the deployed W={W_FULL}/'
+                                          f'{BACKBONE_EPOCHS}: this study ranks factors '
+                                          f'against each other, and the absolute MPE of '
+                                          f'each cell is not comparable with Study A or '
+                                          f'Module 7.'),
+                                 'factors': sens}
+    print('\n    sensitivity ranking (spread in MPE across the values tried):')
+    for label, d in sorted(sens.items(), key=lambda kv: -kv[1]['spread_pct']):
+        print(f'      {label:<15} {d["spread_pct"]:>6.1f}%')
+    save_results('Study C')
+
+# ════════════════════════════════════════════════════════════════════
+# STUDY D — diffusion ablations (opt-in)
+# ════════════════════════════════════════════════════════════════════
+D_CONFIGS = [
+    {'name': 'reference (v-pred, min-SNR 5, cv-residual)', 'param': 'v',  'min_snr': 5.0,  'target': 'cv_residual'},
+    {'name': 'epsilon-prediction',                          'param': 'eps','min_snr': 5.0,  'target': 'cv_residual'},
+    {'name': 'x0-prediction',                               'param': 'x0', 'min_snr': 5.0,  'target': 'cv_residual'},
+    {'name': 'no Min-SNR weighting',                        'param': 'v',  'min_snr': math.inf, 'target': 'cv_residual'},
+    {'name': 'Min-SNR gamma = 1',                           'param': 'v',  'min_snr': 1.0,  'target': 'cv_residual'},
+    {'name': 'raw-displacement target',                     'param': 'v',  'min_snr': 5.0,  'target': 'delta'},
+    {'name': 'no horizon conditioning',                     'param': 'v',  'min_snr': 5.0,  'target': 'cv_residual', 'use_horizon': False},
+    {'name': 'half width (latent 256)',                     'param': 'v',  'min_snr': 5.0,  'target': 'cv_residual', 'latent': 256, 'hidden': 512},
+    {'name': 'six transformer layers',                      'param': 'v',  'min_snr': 5.0,  'target': 'cv_residual', 'layers': 6},
+]
+
+
+def build_targets(target_mode):
+    """x0 in the model's scaled space, for whichever target formulation is being ablated."""
+    cv_tr = const_velocity_delta(T['inp'], T['ps']) * T['dnorm'][:, None, None]
+    cv_va = const_velocity_delta(V['inp'], V['ps']) * V['dnorm'][:, None, None]
+    if target_mode == 'cv_residual':
+        a, b = T['delta'] - cv_tr, V['delta'] - cv_va
+    else:
+        a, b = T['delta'], V['delta']
+    s = float(1.0 / (a.std().item() + 1e-8))
+    return a * s, b * s, s, cv_va
+
+
+def train_diffusion(cfg, epochs, frac):
+    tgt_tr, _, scale, cv_va = build_targets(cfg.get('target', 'cv_residual'))
+    model = ConditionalDenoiser(W_FULL, cfg.get('latent', 512), cfg.get('hidden', 1024),
+                                8, cfg.get('layers', 3), 0.1, 8,
+                                cfg.get('use_horizon', True)).to(DEVICE)
+    # Trained from scratch here, so nothing restores the buffer: set it from the data,
+    # the same way Module 5 does, or the ablations train on an unscaled input.
+    model.ctx_scale.fill_(float(1.0 / ((T['inp'][:, :-1] - T['inp'][:, -1:]).std().item() + 1e-8)))
+    diff = Diffusion(500, cfg['param'], cfg['min_snr'])
+    opt = torch.optim.AdamW(model.parameters(), lr=D_LR, weight_decay=0.05)
+    sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs, eta_min=1e-6)
+    scaler = torch.amp.GradScaler(DEVICE, enabled=(DEVICE == 'cuda'))
+    rng = np.random.default_rng(SEED)
+    n_use = int(M_tr * frac)
+    t0 = time.time()
+    for ep in range(epochs):
+        model.train()
+        perm = rng.permutation(M_tr)[:n_use]
+        for bi in range(0, n_use - D_BATCH + 1, D_BATCH):
+            rows = perm[bi:bi + D_BATCH]
+            opt.zero_grad(set_to_none=True)
+            # Accumulate D_BATCH/D_MICRO micro-batches. Each loss is pre-scaled by its share
+            # of the batch, so the summed gradient equals one backward() on the full batch.
+            for mb in range(0, D_BATCH, D_MICRO):
+                sl = rows[mb:mb + D_MICRO]
+                if len(sl) == 0:
+                    continue
+                x0 = tgt_tr[sl]
+                t = torch.randint(0, diff.T, (len(sl),), device=DEVICE)
+                noise = torch.randn_like(x0)
+                x_t = diff.sq[t][:, None, None] * x0 + diff.sq1[t][:, None, None] * noise
+                with torch.autocast(device_type=DEVICE, dtype=torch.float16,
+                                    enabled=(DEVICE == 'cuda')):
+                    out = model(T['inp'][sl], x_t, t, T['ps'][sl])
+                    loss = (diff.w[t][:, None, None] *
+                            (out - diff.target(x0, noise, t)) ** 2).mean()
+                scaler.scale(loss * len(sl) / D_BATCH).backward()
+            scaler.unscale_(opt)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(opt); scaler.update()
+        sch.step()
+    # evaluate at the operating point study A identified, or a sensible default
+    steps = results.get('A_knee', {}).get('steps', 20)
+    ns = results.get('A_knee', {}).get('samples', 4)
+    model.eval()
+    idx = np.linspace(0, M_va - 1, min(A_SUBSET, M_va)).astype(int)
+    tot, n = 0.0, 0
+    rows = max(1, 64 // ns)
+    for bi in range(0, len(idx), rows):
+        sl = idx[bi:bi + rows]
+        ctx, k, dn = V['inp'][sl], V['ps'][sl], V['dnorm'][sl]
+        d_eq = ddim(model, diff, ctx, k, steps, ns) / scale
+        if cfg.get('target', 'cv_residual') == 'cv_residual':
+            d_eq = d_eq + const_velocity_delta(ctx, k) * dn[:, None, None]
+        e = mean_point_error(ctx[:, -1] + to_physical(d_eq, dn), V['tgt'][sl])
+        tot += e.sum().item(); n += len(e)
+    return tot / n, time.time() - t0, sum(p.numel() for p in model.parameters())
+
+
+if RUN_D:
+    est = len(D_CONFIGS) * D_EPOCHS * D_TRAIN_FRAC + D_PROMOTE_TOP * D_PROMOTE_EPOCH
+    print(f'\n  STUDY D — diffusion ablations')
+    print(f'    {len(D_CONFIGS)} configs x {D_EPOCHS} epochs at {D_TRAIN_FRAC:.0%} data, '
+          f'then top {D_PROMOTE_TOP} at {D_PROMOTE_EPOCH} epochs')
+    print(f'    ≈ {est:.0f} full-data-epoch equivalents; at ~100 s/epoch that is '
+          f'≈ {est * 100 / 3600:.1f} h. Interrupt now if that is too long.')
+    rung1 = {}
+    for cfg in D_CONFIGS:
+        mpe, secs, par = train_diffusion(cfg, D_EPOCHS, D_TRAIN_FRAC)
+        rung1[cfg['name']] = {'mpe': mpe, 'seconds': secs, 'parameters': par, **{
+            k: (str(v) if not isinstance(v, (int, float, bool, str)) else v)
+            for k, v in cfg.items() if k != 'name'}}
+        print(f'    {cfg["name"]:<44} MPE {mpe:.6f}  ({secs / 60:.1f} min)')
+    promote = sorted(rung1, key=lambda n: rung1[n]['mpe'])[:D_PROMOTE_TOP]
+    print(f'    promoting to {D_PROMOTE_EPOCH} epochs: {promote}')
+    rung2 = {}
+    for name in promote:
+        cfg = next(c for c in D_CONFIGS if c['name'] == name)
+        mpe, secs, par = train_diffusion(cfg, D_PROMOTE_EPOCH, 1.0)
+        rung2[name] = {'mpe': mpe, 'seconds': secs, 'parameters': par}
+        print(f'    {name:<44} MPE {mpe:.6f}  ({secs / 60:.1f} min, full budget)')
+    results['D_ablations'] = {'screening': rung1, 'promoted': rung2,
+                              'screening_epochs': D_EPOCHS, 'screening_fraction': D_TRAIN_FRAC,
+                              'promoted_epochs': D_PROMOTE_EPOCH}
+else:
+    print('\n  STUDY D — skipped (RUN_D = False). Set it True to run the diffusion '
+          'ablations;\n    the budget is printed before training starts.')
+
+# ════════════════════════════════════════════════════════════════════
+# OUTPUT
+# ════════════════════════════════════════════════════════════════════
+save_results('all studies')
+print(f'  Results written : {RESULTS_PATH}')
+
+# Keyed on what results actually hold, not on the RUN_* flags: a resumed run has
+# Study A and B loaded from disk with RUN_A/RUN_B False, and they still belong on the
+# figure.
+has_A = 'A_inference' in results
+has_B = 'B_context' in results
+has_C = 'C_optimisation' in results
+n_panels = sum([has_A, has_B, has_C])
+if n_panels:
+    fig, axes = plt.subplots(1, max(n_panels, 2), figsize=(6.5 * max(n_panels, 2), 5))
+    ax_i = 0
+    if has_A:
+        ax = axes[ax_i]; ax_i += 1
+        g = results['A_inference']
+        for ns in A_SAMPLES:
+            pts = sorted((v for v in g.values() if v['samples'] == ns),
+                         key=lambda v: v['forward_passes'])
+            ax.plot([p['forward_passes'] for p in pts], [p['mpe'] for p in pts],
+                    marker='o', lw=1.3, label=f'{ns} sample(s)')
+        kn = results['A_knee']
+        ax.scatter([kn['forward_passes']], [kn['mpe']], s=140, facecolors='none',
+                   edgecolors='crimson', lw=2, zorder=5, label='knee (within 1% of best)')
+        ax.set_xscale('log'); ax.set_xlabel('forward passes per prediction (log)')
+        ax.set_ylabel('Mean Point Error')
+        ax.set_title('A — inference cost vs accuracy', fontweight='bold')
+        ax.legend(fontsize=8); ax.grid(alpha=0.3)
+    if has_B:
+        ax = axes[ax_i]; ax_i += 1
+        ws = sorted(results['B_context'], key=int)
+        ax.plot(ws, [results['B_context'][w]['mpe'] for w in ws], marker='o', color='#1F6F6B')
+        ax.set_xticks(ws); ax.set_xlabel('context frames W'); ax.set_ylabel('Mean Point Error')
+        ax.set_title('B — does more past help?', fontweight='bold'); ax.grid(alpha=0.3)
+    if has_C:
+        ax = axes[ax_i]; ax_i += 1
+        s = results['C_optimisation']['factors']
+        labs = sorted(s, key=lambda l: s[l]['spread_pct'])
+        ax.barh(labs, [s[l]['spread_pct'] for l in labs], color='#9A3B2E')
+        ax.set_xlabel('MPE spread across values tried (%)')
+        ax.set_title('C — which knobs matter', fontweight='bold'); ax.grid(alpha=0.3, axis='x')
+    for j in range(ax_i, len(axes)):
+        axes[j].axis('off')
+    plt.suptitle('Module 8: hyperparameter and optimisation study', fontsize=13,
+                 fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(f'{MODULE8_DIR}/module8_hpo.png', dpi=120, bbox_inches='tight')
+    plt.show()
+    print(f'  Figure written  : {MODULE8_DIR}/module8_hpo.png')
+print('=' * 72)

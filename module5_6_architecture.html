@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 &amp; 6 Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --paper:      #F7F8F7;
+    --surface:    #FFFFFF;
+    --sunken:     #EFF2F1;
+    --ink:        #141A1F;
+    --ink-soft:   #35434A;
+    --muted:      #5B6B72;
+    --rule:       #DCE3E3;
+    --rule-soft:  #E8EDEC;
+    --accent:     #1F6F6B;
+    --accent-dim: #E2EFED;
+    --flow:       #9A3B2E;
+    --flow-dim:   #F5E7E4;
+
+    --f-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-body:    "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --f-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0F1417;
+      --surface:    #161D21;
+      --sunken:     #1B2429;
+      --ink:        #E3E9E8;
+      --ink-soft:   #C2CDCC;
+      --muted:      #8B9C9F;
+      --rule:       #2A363B;
+      --rule-soft:  #212B30;
+      --accent:     #58AEA6;
+      --accent-dim: #17312F;
+      --flow:       #D98B7C;
+      --flow-dim:   #2E1E1A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0F1417;
+    --surface:    #161D21;
+    --sunken:     #1B2429;
+    --ink:        #E3E9E8;
+    --ink-soft:   #C2CDCC;
+    --muted:      #8B9C9F;
+    --rule:       #2A363B;
+    --rule-soft:  #212B30;
+    --accent:     #58AEA6;
+    --accent-dim: #17312F;
+    --flow:       #D98B7C;
+    --flow-dim:   #2E1E1A;
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+
+  .page { max-width: 60rem; margin: 0 auto; padding: 3.5rem 2rem 5rem; }
+  @media (max-width: 640px) { .page { padding: 2.5rem 1.1rem 3.5rem; } }
+
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.4rem; }
+  .eyebrow {
+    font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 600; color: var(--accent); margin: 0 0 0.85rem;
+  }
+  h1 {
+    font-family: var(--f-display); font-weight: 500;
+    font-size: clamp(2rem, 5vw, 2.8rem); line-height: 1.1;
+    letter-spacing: -0.015em; text-wrap: balance; margin: 0 0 0.55rem;
+  }
+  .standfirst {
+    font-family: var(--f-display); font-size: 1.1rem; line-height: 1.55;
+    color: var(--ink-soft); max-width: 56ch; margin: 0;
+  }
+
+  section { margin-top: 3rem; }
+  .sec-head {
+    display: flex; align-items: baseline; gap: 0.75rem;
+    border-top: 1px solid var(--rule); padding-top: 0.95rem; margin-bottom: 0.85rem;
+  }
+  .sec-head .num { font-family: var(--f-mono); font-size: 0.8rem; color: var(--accent); font-weight: 500; }
+  h2 {
+    font-family: var(--f-display); font-weight: 600; font-size: 1.45rem;
+    line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance;
+  }
+  p { margin: 0 0 1rem; max-width: 68ch; }
+  p:last-child { margin-bottom: 0; }
+  code {
+    font-family: var(--f-mono); font-size: 0.855em; background: var(--sunken);
+    padding: 0.1em 0.34em; border-radius: 2px; color: var(--ink-soft);
+  }
+
+  /* ── Figures ─────────────────────────────────────────── */
+  figure {
+    margin: 1.6rem 0 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1.4rem 1.3rem 1.1rem;
+    overflow-x: auto;
+  }
+  figure svg { display: block; width: 100%; min-width: 30rem; max-width: 100%; height: auto; }
+  figcaption {
+    margin-top: 1.1rem; padding-top: 0.8rem; border-top: 1px solid var(--rule-soft);
+    font-size: 0.82rem; line-height: 1.55; color: var(--muted); max-width: 72ch;
+  }
+  figcaption b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ── Diagram vocabulary ──────────────────────────────── */
+  .dg { color: var(--ink); }
+  .dg .box   { fill: var(--surface); stroke: currentColor; stroke-width: 1.3; }
+  .dg .soft  { fill: var(--sunken);  stroke: var(--rule);  stroke-width: 1; }
+  .dg .tint  { fill: var(--accent-dim); stroke: var(--accent); stroke-width: 1.3; }
+  .dg .warm  { fill: var(--flow-dim); stroke: var(--flow); stroke-width: 1.3; }
+
+  .dg text { font-family: var(--f-body); fill: currentColor; }
+  .dg .t-ttl  { font-size: 13px; font-weight: 600; }
+  .dg .t-sub  { font-size: 11px; fill: var(--muted); }
+  .dg .t-mono { font-family: var(--f-mono); font-size: 10.5px; fill: var(--muted); }
+  .dg .t-lane {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.11em; fill: var(--muted);
+  }
+  .dg .t-edge { font-family: var(--f-mono); font-size: 10px; fill: var(--muted); }
+
+  .dg .edge { stroke: currentColor; stroke-width: 1.3; fill: none; }
+  .dg .thin { stroke: var(--rule); stroke-width: 1; fill: none; }
+
+  .dg .cond { color: var(--accent); }
+  .dg .cond .t-sub, .dg .cond .t-edge { fill: var(--accent); }
+  .dg .cond .box { stroke: var(--accent); fill: var(--accent-dim); }
+
+  .dg .fb { color: var(--flow); }
+  .dg .fb .t-edge { fill: var(--flow); }
+
+  .mk-ink { fill: var(--ink); }
+  .mk-acc { fill: var(--accent); }
+  .mk-flw { fill: var(--flow); }
+
+  footer {
+    margin-top: 3.25rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.76rem; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">GASR · 4D Surgical Scene Reconstruction · Architecture</p>
+    <h1>Module 5 &amp; 6 Architecture</h1>
+    <p class="standfirst">How the conditional diffusion model is built, how it is trained, and how
+      Module 6 queries it for future tissue geometry.</p>
+  </header>
+
+  <!-- ══════════════ FIGURE 1 ══════════════ -->
+  <section>
+    <div class="sec-head"><span class="num">Fig 1</span><h2>The ConditionalDenoiser</h2></div>
+    <p>Two encoders run in parallel — one over the four past frames, one over the noisy displacement
+      being denoised. Both are conditioned, then fused by cross-attention that runs in <em>both</em>
+      directions over the 512-point axis.</p>
+
+    <figure>
+      <svg viewBox="0 0 920 735" class="dg" role="img"
+           aria-label="Module 5 ConditionalDenoiser: a context branch encodes four past frames through a pointwise GeomMLP, temporal positional encoding and a three-layer temporal transformer with last-token pooling; a target branch encodes the noisy displacement through a separate GeomMLP; a conditioning lane supplies a sinusoidal diffusion timestep embedding to the target branch and a horizon embedding to both branches; the two latents are fused by bidirectional cross-attention and decoded by an output MLP to a predicted velocity.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+          <marker id="a1c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-acc"/>
+          </marker>
+        </defs>
+
+        <!-- lane labels -->
+        <text class="t-lane" x="40"  y="24">CONTEXT BRANCH</text>
+        <text class="t-lane" x="335" y="24">CONDITIONING</text>
+        <text class="t-lane" x="630" y="24">NOISY TARGET</text>
+
+        <!-- ── lane A : context ── -->
+        <rect class="box" x="40" y="40" width="250" height="52" rx="2"/>
+        <text class="t-ttl"  x="165" y="62"  text-anchor="middle">Past geometry</text>
+        <text class="t-mono" x="165" y="79"  text-anchor="middle">(B, 4, 512, 3)</text>
+        <line class="edge" x1="165" y1="92" x2="165" y2="106" marker-end="url(#a1)"/>
+
+        <rect class="box" x="40" y="112" width="250" height="58" rx="2"/>
+        <text class="t-ttl" x="165" y="135" text-anchor="middle">GeomMLP</text>
+        <text class="t-sub" x="165" y="153" text-anchor="middle">3 → 1024³ → 512, pointwise</text>
+        <line class="edge" x1="165" y1="170" x2="165" y2="184" marker-end="url(#a1)"/>
+
+        <rect class="soft" x="40" y="190" width="250" height="40" rx="2"/>
+        <text class="t-sub" x="165" y="215" text-anchor="middle">+ learned temporal PE (4 × 512)</text>
+        <line class="edge" x1="165" y1="230" x2="165" y2="244" marker-end="url(#a1)"/>
+
+        <rect class="box" x="40" y="250" width="250" height="70" rx="2"/>
+        <text class="t-ttl"  x="165" y="273" text-anchor="middle">Temporal Transformer × 3</text>
+        <text class="t-sub"  x="165" y="291" text-anchor="middle">d = 512 · 8 heads · pre-norm</text>
+        <text class="t-mono" x="165" y="309" text-anchor="middle">points folded into batch</text>
+        <line class="edge" x1="165" y1="320" x2="165" y2="334" marker-end="url(#a1)"/>
+
+        <rect class="box" x="40" y="340" width="250" height="52" rx="2"/>
+        <text class="t-ttl" x="165" y="362" text-anchor="middle">Last-token pool</text>
+        <text class="t-sub" x="165" y="379" text-anchor="middle">most recent frame only</text>
+        <line class="edge" x1="165" y1="392" x2="165" y2="405" marker-end="url(#a1)"/>
+
+        <!-- add node A -->
+        <circle class="box" cx="165" cy="424" r="13"/>
+        <line class="edge" x1="157" y1="424" x2="173" y2="424"/>
+        <line class="edge" x1="165" y1="416" x2="165" y2="432"/>
+        <line class="edge" x1="165" y1="437" x2="165" y2="446" marker-end="url(#a1)"/>
+
+        <rect class="soft" x="40" y="452" width="250" height="42" rx="2"/>
+        <text class="t-mono" x="165" y="478" text-anchor="middle">context latent (B, 512, 512)</text>
+
+        <!-- ── lane C : noisy target ── -->
+        <rect class="box" x="630" y="40" width="250" height="52" rx="2"/>
+        <text class="t-ttl"  x="755" y="62" text-anchor="middle">Noisy displacement</text>
+        <text class="t-mono" x="755" y="79" text-anchor="middle">x_t   (B, 512, 3)</text>
+        <line class="edge" x1="755" y1="92" x2="755" y2="106" marker-end="url(#a1)"/>
+
+        <rect class="box" x="630" y="112" width="250" height="58" rx="2"/>
+        <text class="t-ttl" x="755" y="135" text-anchor="middle">GeomMLP</text>
+        <text class="t-sub" x="755" y="153" text-anchor="middle">separate weights</text>
+        <line class="edge" x1="755" y1="170" x2="755" y2="367" marker-end="url(#a1)"/>
+
+        <circle class="box" cx="755" cy="386" r="13"/>
+        <line class="edge" x1="747" y1="386" x2="763" y2="386"/>
+        <line class="edge" x1="755" y1="378" x2="755" y2="394"/>
+        <line class="edge" x1="755" y1="399" x2="755" y2="407" marker-end="url(#a1)"/>
+
+        <circle class="box" cx="755" cy="424" r="13"/>
+        <line class="edge" x1="747" y1="424" x2="763" y2="424"/>
+        <line class="edge" x1="755" y1="416" x2="755" y2="432"/>
+        <line class="edge" x1="755" y1="437" x2="755" y2="446" marker-end="url(#a1)"/>
+
+        <rect class="soft" x="630" y="452" width="250" height="42" rx="2"/>
+        <text class="t-mono" x="755" y="478" text-anchor="middle">target latent (B, 512, 512)</text>
+
+        <!-- ── lane B : conditioning (accent) ── -->
+        <g class="cond">
+          <rect class="box" x="335" y="112" width="250" height="52" rx="2"/>
+          <text class="t-ttl"  x="460" y="134" text-anchor="middle">Diffusion step  t</text>
+          <text class="t-sub"  x="460" y="152" text-anchor="middle">sinusoidal(512),  t ∈ [0, 500)</text>
+          <line class="edge" x1="460" y1="164" x2="460" y2="178" marker-end="url(#a1c)"/>
+
+          <rect class="box" x="335" y="184" width="250" height="46" rx="2"/>
+          <text class="t-ttl" x="460" y="212" text-anchor="middle">time MLP</text>
+
+          <rect class="box" x="335" y="262" width="250" height="52" rx="2"/>
+          <text class="t-ttl" x="460" y="284" text-anchor="middle">Horizon  k ∈ {1, 2, 3}</text>
+          <text class="t-sub" x="460" y="302" text-anchor="middle">Embedding(9, 512)</text>
+          <line class="edge" x1="460" y1="314" x2="460" y2="328" marker-end="url(#a1c)"/>
+
+          <rect class="box" x="335" y="334" width="250" height="46" rx="2"/>
+          <text class="t-ttl" x="460" y="362" text-anchor="middle">horizon MLP</text>
+
+          <!-- time -> target branch only -->
+          <path class="edge" d="M590,207 H612 V386 H738" marker-end="url(#a1c)"/>
+          <!-- horizon -> BOTH branches -->
+          <path class="edge" d="M590,357 H598 V424 H738" marker-end="url(#a1c)"/>
+          <path class="edge" d="M330,357 H300 V424 H182" marker-end="url(#a1c)"/>
+          <text class="t-edge" x="304" y="416">to both branches</text>
+        </g>
+
+        <!-- ── bidirectional cross-attention ── -->
+        <text class="t-lane" x="40" y="518">FUSION — CROSS-ATTENTION OVER THE 512-POINT AXIS</text>
+
+        <line class="edge" x1="165" y1="494" x2="243" y2="534" marker-end="url(#a1)"/>
+        <line class="edge" x1="755" y1="494" x2="320" y2="534" marker-end="url(#a1)"/>
+        <line class="edge" x1="755" y1="494" x2="676" y2="534" marker-end="url(#a1)"/>
+        <line class="edge" x1="165" y1="494" x2="600" y2="534" marker-end="url(#a1)"/>
+        <text class="t-edge" x="186" y="512">K,V</text>
+        <text class="t-edge" x="238" y="530">Q</text>
+        <text class="t-edge" x="700" y="512">K,V</text>
+        <text class="t-edge" x="640" y="530">Q</text>
+
+        <rect class="box" x="150" y="540" width="240" height="56" rx="2"/>
+        <text class="t-ttl" x="270" y="562" text-anchor="middle">cross-attn  target → context</text>
+        <text class="t-sub" x="270" y="580" text-anchor="middle">+ residual, LayerNorm</text>
+
+        <rect class="box" x="530" y="540" width="240" height="56" rx="2"/>
+        <text class="t-ttl" x="650" y="562" text-anchor="middle">cross-attn  context → target</text>
+        <text class="t-sub" x="650" y="580" text-anchor="middle">+ residual, LayerNorm</text>
+
+        <path class="edge" d="M270,596 V618 H455" marker-end="url(#a1)"/>
+        <path class="edge" d="M650,596 V618 H465" marker-end="url(#a1)"/>
+        <text class="t-mono" x="460" y="612" text-anchor="middle">concat → (B, 512, 1024)</text>
+
+        <rect class="box" x="280" y="628" width="360" height="76" rx="2"/>
+        <text class="t-ttl"  x="460" y="652" text-anchor="middle">Output MLP</text>
+        <text class="t-sub"  x="460" y="670" text-anchor="middle">1024 → 1024 → 512 → 3</text>
+        <text class="t-mono" x="460" y="691" text-anchor="middle">predicted velocity  v̂  (B, 512, 3)</text>
+      </svg>
+      <figcaption><b>Fig 1 — ConditionalDenoiser forward pass.</b> The teal path is what makes the
+        model <em>conditional</em>. Note where each signal lands: the diffusion timestep reaches only
+        the target branch, but the horizon <em>k</em> is added to <em>both</em> latents. That second
+        arrow is the fix described in the technical note — without <em>k</em> in the context features,
+        a constant-velocity estimator <code>last + v·k</code> is not representable at all. Folding the
+        512 points into the batch dimension is also why activation memory scales with
+        <code>batch × 512</code>, which is what forced gradient accumulation on a T4.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ══════════════ FIGURE 2 ══════════════ -->
+  <section>
+    <div class="sec-head"><span class="num">Fig 2</span><h2>What it is trained on</h2></div>
+    <p>The network above is one step inside a diffusion objective. Two rescalings stand between
+      Module 4's raw displacement and the target the model actually sees — and both are inverted
+      before any metric is computed, so evaluation always happens in physical units.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 400" class="dg" role="img"
+           aria-label="Module 5 training objective: the raw displacement is scaled by a per-video displacement norm and then by DATA_SCALE to give a near-unit-variance target x-zero; noise and a timestep produce the noised sample x-t; the ConditionalDenoiser predicts a velocity, which is compared against the analytic velocity target under a min-SNR weighted loss plus an auxiliary x-zero term.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+        </defs>
+
+        <text class="t-lane" x="30" y="26">SCALE CHAIN — MODULE 4 OUTPUT TO DIFFUSION TARGET</text>
+
+        <rect class="box" x="30" y="44" width="180" height="56" rx="2"/>
+        <text class="t-ttl"  x="120" y="68" text-anchor="middle">Raw displacement</text>
+        <text class="t-mono" x="120" y="86" text-anchor="middle">G(t+k) − G(t)</text>
+
+        <line class="edge" x1="210" y1="72" x2="288" y2="72" marker-end="url(#a2)"/>
+        <text class="t-edge" x="249" y="62" text-anchor="middle">× disp_norm</text>
+        <text class="t-edge" x="249" y="90" text-anchor="middle">per video</text>
+
+        <rect class="box" x="294" y="44" width="180" height="56" rx="2"/>
+        <text class="t-ttl" x="384" y="68" text-anchor="middle">Equalised Δ</text>
+        <text class="t-sub" x="384" y="86" text-anchor="middle">≈ 0.004 units</text>
+
+        <line class="edge" x1="474" y1="72" x2="552" y2="72" marker-end="url(#a2)"/>
+        <text class="t-edge" x="513" y="62" text-anchor="middle">× DATA_SCALE</text>
+        <text class="t-edge" x="513" y="90" text-anchor="middle">1 / std(Δ)</text>
+
+        <rect class="tint" x="558" y="44" width="180" height="56" rx="2"/>
+        <text class="t-ttl"  x="648" y="68" text-anchor="middle">x₀</text>
+        <text class="t-sub"  x="648" y="86" text-anchor="middle">≈ unit variance</text>
+
+        <path class="edge" d="M648,100 V140" marker-end="url(#a2)"/>
+
+        <text class="t-lane" x="30" y="140">FORWARD PROCESS</text>
+
+        <rect class="soft" x="30" y="152" width="180" height="56" rx="2"/>
+        <text class="t-mono" x="120" y="176" text-anchor="middle">ε ~ N(0, I)</text>
+        <text class="t-mono" x="120" y="194" text-anchor="middle">t ~ U[0, 500)</text>
+        <line class="edge" x1="210" y1="180" x2="288" y2="180" marker-end="url(#a2)"/>
+
+        <rect class="box" x="294" y="152" width="290" height="56" rx="2"/>
+        <text class="t-ttl"  x="439" y="176" text-anchor="middle">q_sample — cosine schedule</text>
+        <text class="t-mono" x="439" y="194" text-anchor="middle">x_t = √ā·x₀ + √(1−ā)·ε</text>
+        <path class="edge" d="M648,152 V128 H600 V180 H590" marker-end="url(#a2)"/>
+
+        <line class="edge" x1="584" y1="180" x2="648" y2="180" marker-end="url(#a2)"/>
+
+        <rect class="tint" x="654" y="152" width="216" height="56" rx="2"/>
+        <text class="t-ttl" x="762" y="176" text-anchor="middle">ConditionalDenoiser</text>
+        <text class="t-sub" x="762" y="194" text-anchor="middle">+ context, horizon k  (Fig 1)</text>
+
+        <path class="edge" d="M762,208 V262" marker-end="url(#a2)"/>
+        <text class="t-edge" x="772" y="238">v̂</text>
+
+        <text class="t-lane" x="30" y="262">OBJECTIVE</text>
+
+        <rect class="box" x="294" y="274" width="290" height="56" rx="2"/>
+        <text class="t-ttl"  x="439" y="298" text-anchor="middle">analytic target</text>
+        <text class="t-mono" x="439" y="316" text-anchor="middle">v = √ā·ε − √(1−ā)·x₀</text>
+        <line class="edge" x1="584" y1="302" x2="648" y2="302" marker-end="url(#a2)"/>
+
+        <rect class="box" x="654" y="274" width="216" height="56" rx="2"/>
+        <text class="t-ttl" x="762" y="298" text-anchor="middle">Loss</text>
+        <text class="t-sub" x="762" y="316" text-anchor="middle">min-SNR(γ=5) · ‖v̂ − v‖²</text>
+
+        <rect class="soft" x="30" y="274" width="240" height="56" rx="2"/>
+        <text class="t-sub"  x="150" y="298" text-anchor="middle">auxiliary term</text>
+        <text class="t-mono" x="150" y="316" text-anchor="middle">+ 0.1 · ‖x̂₀ − x₀‖²</text>
+        <line class="edge" x1="270" y1="302" x2="288" y2="302" marker-end="url(#a2)"/>
+
+        <text class="t-sub" x="30" y="366">Inference reverses this: DDIM walks x_t back to x₀, then ÷ DATA_SCALE and ÷ disp_norm return a physical displacement.</text>
+      </svg>
+      <figcaption><b>Fig 2 — the diffusion objective and the scale chain.</b> The two multiplications
+        on the top row are the fix for the "signal drowned in noise" failure: Module 4's equalisation
+        removes cross-video motion imbalance, and <code>DATA_SCALE</code> lifts a ~0.004-unit
+        displacement to unit variance so it survives the forward process. The model predicts
+        <b>v</b> — the diffusion velocity — not the noise, which is far better conditioned at this
+        scale. Both scalings are inverted before every Chamfer Distance.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ══════════════ FIGURE 3 ══════════════ -->
+  <section>
+    <div class="sec-head"><span class="num">Fig 3</span><h2>Module 6 — inference architecture</h2></div>
+    <p>Module 6 trains nothing. It rebuilds the exact trajectory Module 5 saw, proves that it did so,
+      and then drives one shared sampler in three different ways.</p>
+
+    <figure>
+      <svg viewBox="0 0 920 636" class="dg" role="img"
+           aria-label="Module 6 inference architecture: the Module 5 checkpoint, Module 4 metadata and the Module 3 trajectory feed a trajectory replay step, which is verified by quality test zero before a shared DDIM sampler drives three studies — direct prediction, autoregressive rollout and multi-hypothesis sampling — producing metrics, geometry exports, uncertainty and baseline comparisons.">
+        <defs>
+          <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+          <marker id="a3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-acc"/>
+          </marker>
+        </defs>
+
+        <text class="t-lane" x="40" y="24">INPUTS</text>
+
+        <rect class="box" x="40" y="36" width="230" height="58" rx="2"/>
+        <text class="t-ttl" x="155" y="60" text-anchor="middle">Module 5 checkpoint</text>
+        <text class="t-sub" x="155" y="78" text-anchor="middle">EMA weights · arch from ckpt</text>
+
+        <rect class="box" x="340" y="36" width="240" height="58" rx="2"/>
+        <text class="t-ttl" x="460" y="60" text-anchor="middle">Module 4 metadata</text>
+        <text class="t-sub" x="460" y="78" text-anchor="middle">seed · smooth window · disp_norm</text>
+
+        <rect class="box" x="650" y="36" width="230" height="58" rx="2"/>
+        <text class="t-ttl" x="765" y="60" text-anchor="middle">Module 3 trajectory</text>
+        <text class="t-sub" x="765" y="78" text-anchor="middle">gaussian_trajectory.npy</text>
+
+        <path class="edge" d="M460,94 V128" marker-end="url(#a3)"/>
+        <path class="edge" d="M765,94 V112 H620 V128" marker-end="url(#a3)"/>
+
+        <rect class="box" x="290" y="134" width="440" height="62" rx="2"/>
+        <text class="t-ttl" x="510" y="158" text-anchor="middle">Trajectory replay</text>
+        <text class="t-sub" x="510" y="176" text-anchor="middle">seeded FPS anchors → Savitzky–Golay → frame-0 normalise</text>
+        <path class="edge" d="M510,196 V228" marker-end="url(#a3)"/>
+
+        <g class="cond">
+          <rect class="box" x="290" y="234" width="440" height="56" rx="2"/>
+          <text class="t-ttl" x="510" y="257" text-anchor="middle">QT0 — replay verification</text>
+          <text class="t-sub" x="510" y="275" text-anchor="middle">must match Module 4 val windows before anything is predicted</text>
+          <path class="edge" d="M510,290 V322" marker-end="url(#a3c)"/>
+        </g>
+
+        <path class="edge" d="M155,94 V352 H244" marker-end="url(#a3)"/>
+        <text class="t-edge" x="163" y="230">EMA weights</text>
+
+        <rect class="box" x="250" y="328" width="420" height="62" rx="2"/>
+        <text class="t-ttl" x="460" y="352" text-anchor="middle">Shared DDIM sampler</text>
+        <text class="t-sub" x="460" y="370" text-anchor="middle">20 steps · N-sample mean · η = 0 deterministic / η &gt; 0 stochastic</text>
+
+        <path class="edge" d="M460,390 V410 H160 V424" marker-end="url(#a3)"/>
+        <path class="edge" d="M460,390 V424" marker-end="url(#a3)"/>
+        <path class="edge" d="M460,390 V410 H760 V424" marker-end="url(#a3)"/>
+
+        <text class="t-lane" x="40" y="414">THREE STUDIES</text>
+
+        <rect class="box" x="30" y="430" width="260" height="74" rx="2"/>
+        <text class="t-ttl"  x="160" y="453" text-anchor="middle">A · Direct prediction</text>
+        <text class="t-sub"  x="160" y="471" text-anchor="middle">one shot, horizon-conditioned</text>
+        <text class="t-mono" x="160" y="491" text-anchor="middle">k ≤ 3 — trained horizons only</text>
+
+        <rect class="box" x="330" y="430" width="260" height="74" rx="2"/>
+        <text class="t-ttl"  x="460" y="453" text-anchor="middle">B · Autoregressive rollout</text>
+        <text class="t-sub"  x="460" y="471" text-anchor="middle">iterate k = 1, feed prediction back</text>
+        <text class="t-mono" x="460" y="491" text-anchor="middle">H = 10 — exceeds training</text>
+
+        <rect class="box" x="630" y="430" width="260" height="74" rx="2"/>
+        <text class="t-ttl"  x="760" y="453" text-anchor="middle">C · Multi-hypothesis</text>
+        <text class="t-sub"  x="760" y="471" text-anchor="middle">5 futures, η = 1.0</text>
+        <text class="t-mono" x="760" y="491" text-anchor="middle">per-point spread</text>
+
+        <line class="edge" x1="160" y1="504" x2="160" y2="530" marker-end="url(#a3)"/>
+        <line class="edge" x1="460" y1="504" x2="460" y2="530" marker-end="url(#a3)"/>
+        <line class="edge" x1="760" y1="504" x2="760" y2="530" marker-end="url(#a3)"/>
+
+        <text class="t-lane" x="40" y="524">OUTPUTS — SCORED AGAINST NAIVE AND CONSTANT VELOCITY AT EVERY HORIZON</text>
+
+        <rect class="soft" x="35" y="536" width="195" height="52" rx="2"/>
+        <text class="t-sub" x="132" y="559" text-anchor="middle">QT1–QT5</text>
+        <text class="t-mono" x="132" y="576" text-anchor="middle">accuracy · growth · spread</text>
+
+        <rect class="soft" x="255" y="536" width="195" height="52" rx="2"/>
+        <text class="t-sub" x="352" y="559" text-anchor="middle">module6_metrics.json</text>
+        <text class="t-mono" x="352" y="576" text-anchor="middle">for Module 7</text>
+
+        <rect class="soft" x="475" y="536" width="195" height="52" rx="2"/>
+        <text class="t-sub" x="572" y="559" text-anchor="middle">PLY / NPY exports</text>
+        <text class="t-mono" x="572" y="576" text-anchor="middle">predicted geometry</text>
+
+        <rect class="soft" x="695" y="536" width="195" height="52" rx="2"/>
+        <text class="t-sub" x="792" y="559" text-anchor="middle">uncertainty field</text>
+        <text class="t-mono" x="792" y="576" text-anchor="middle">per-point std</text>
+
+        <line class="thin" x1="35" y1="606" x2="890" y2="606"/>
+        <text class="t-sub" x="35" y="626">Nothing is predicted until QT0 passes — otherwise every number below would be measuring a different dataset than the model was trained on.</text>
+      </svg>
+      <figcaption><b>Fig 3 — Module 6 inference pipeline.</b> The replay step exists because Module 4
+        emits fixed windows, which cannot support a rollout: feeding predictions back requires the
+        continuous trajectory. QT0 (teal) is the gate that makes the replay trustworthy — it
+        cross-checks the rebuilt contexts against Module 4's own saved validation windows before a
+        single prediction is made.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ══════════════ FIGURE 4 ══════════════ -->
+  <section>
+    <div class="sec-head"><span class="num">Fig 4</span><h2>Direct prediction vs rollout</h2></div>
+    <p>The two studies reach the same horizon by different routes, and the difference is one edge.</p>
+
+    <figure>
+      <svg viewBox="0 0 900 320" class="dg" role="img"
+           aria-label="Comparison of direct prediction and autoregressive rollout. Direct prediction takes the four-frame context window through the model once with horizon k equals three to produce the prediction. Rollout takes the same context through the model with horizon one, then feeds the prediction back into the context window as its newest frame while the oldest frame drops, repeating until the horizon is reached.">
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ink"/>
+          </marker>
+          <marker id="a4f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-flw"/>
+          </marker>
+        </defs>
+
+        <line class="thin" x1="450" y1="16" x2="450" y2="300"/>
+
+        <!-- Panel A -->
+        <text class="t-lane" x="30" y="30">A · DIRECT — ONE HOP</text>
+        <rect class="soft" x="40"  y="76" width="42" height="36" rx="2"/>
+        <rect class="soft" x="88"  y="76" width="42" height="36" rx="2"/>
+        <rect class="soft" x="136" y="76" width="42" height="36" rx="2"/>
+        <rect class="box"  x="184" y="76" width="42" height="36" rx="2"/>
+        <text class="t-mono" x="133" y="132" text-anchor="middle">G(t−3) … G(t)   observed</text>
+        <line class="edge" x1="226" y1="94" x2="256" y2="94" marker-end="url(#a4)"/>
+
+        <rect class="box" x="262" y="68" width="86" height="52" rx="2"/>
+        <text class="t-ttl" x="305" y="90"  text-anchor="middle">model</text>
+        <text class="t-sub" x="305" y="108" text-anchor="middle">k = 3</text>
+        <line class="edge" x1="348" y1="94" x2="378" y2="94" marker-end="url(#a4)"/>
+
+        <rect class="tint" x="384" y="76" width="42" height="36" rx="2"/>
+        <text class="t-mono" x="405" y="132" text-anchor="middle">Ĝ(t+3)</text>
+
+        <text class="t-sub" x="40" y="192">Horizon reaches the network directly, so</text>
+        <text class="t-sub" x="40" y="210">no prediction is ever used as input.</text>
+        <text class="t-sub" x="40" y="240">Limited to k ≤ 3 — embedding rows 4–8</text>
+        <text class="t-sub" x="40" y="258">exist but were never trained.</text>
+
+        <!-- Panel B -->
+        <text class="t-lane" x="480" y="30">B · ROLLOUT — H HOPS WITH FEEDBACK</text>
+        <rect class="soft" x="490" y="76" width="42" height="36" rx="2"/>
+        <rect class="soft" x="538" y="76" width="42" height="36" rx="2"/>
+        <rect class="soft" x="586" y="76" width="42" height="36" rx="2"/>
+        <rect class="box"  x="634" y="76" width="42" height="36" rx="2"/>
+        <text class="t-mono" x="583" y="132" text-anchor="middle">sliding context window</text>
+        <line class="edge" x1="676" y1="94" x2="706" y2="94" marker-end="url(#a4)"/>
+
+        <rect class="box" x="712" y="68" width="86" height="52" rx="2"/>
+        <text class="t-ttl" x="755" y="90"  text-anchor="middle">model</text>
+        <text class="t-sub" x="755" y="108" text-anchor="middle">k = 1</text>
+        <line class="edge" x1="798" y1="94" x2="826" y2="94" marker-end="url(#a4)"/>
+
+        <rect class="tint" x="832" y="76" width="42" height="36" rx="2"/>
+        <text class="t-mono" x="853" y="132" text-anchor="middle">Ĝ(t+1)</text>
+
+        <!-- the feedback edge -->
+        <g class="fb">
+          <path class="edge" d="M853,112 V162 H511 V118" stroke-dasharray="5 4" marker-end="url(#a4f)"/>
+          <text class="t-edge" x="682" y="180" text-anchor="middle">prediction re-enters as the newest frame; oldest drops</text>
+        </g>
+
+        <text class="t-sub" x="480" y="216">Repeat H = 10 times. Every step after the</text>
+        <text class="t-sub" x="480" y="234">first is conditioned on the model's own</text>
+        <text class="t-sub" x="480" y="252">output, so per-step bias is integrated</text>
+        <text class="t-sub" x="480" y="270">rather than averaged away.</text>
+        <text class="t-mono" x="480" y="298">QT2 fits CD ~ step^b to measure exactly that.</text>
+      </svg>
+      <figcaption><b>Fig 4 — the one edge that separates the two studies.</b> The dashed feedback path
+        is the entire difference. It is what lets rollout exceed the trained horizons, and equally
+        what makes its error compound: QT2 reports a growth exponent <code>b</code>, where
+        <code>b ≈ 0.5</code> is an unbiased random walk, <code>b ≈ 1</code> is a constant bias being
+        integrated, and <code>b &gt; 1.5</code> is drift off the data manifold.</figcaption>
+    </figure>
+  </section>
+
+  <footer>
+    <p>GASR — 4D Surgical Scene Reconstruction &amp; Deformation Prediction ·
+      FAST NUCES Islamabad · Supervised by Dr Akhtar Jamil.
+      Companion to <code>module5_technical_note.html</code>. Architecture read from
+      <code>module5_diffusion.py</code> and <code>module6_prediction.py</code>.</p>
+  </footer>
+
+</div>
+</body>
+</html>

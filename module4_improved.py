@@ -10,7 +10,12 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # CONFIG
 # ════════════════════════════════════════════════════════════════════
 N_ANCHOR     = 512
-WINDOW_SIZE  = 4
+WINDOW_SIZE  = 32       # was 4. Raised to test whether a longer context supplies the
+                         # magnitude information the model was missing -- at ~30fps this
+                         # is ~1s of history, enough to span a cardiac cycle, where W=4
+                         # could not span any periodic structure at all. Costs ~11% of
+                         # the windows (a window needs W+k frames) and 8x the context
+                         # tensor on disk. Module 8 Study B measures whether it paid.
 PRED_STEPS   = [1, 2, 3]
 VAL_FRAC     = 0.20
 SEED         = 42                       # reproducible FPS anchor selection
@@ -357,6 +362,55 @@ np.save(f'{COMBINED_DIR}/train_video_id.npy', train_vid)
 np.save(f'{COMBINED_DIR}/val_video_id.npy',   val_vid)
 np.save(f'{COMBINED_DIR}/train_pred_step.npy', train_ps)
 np.save(f'{COMBINED_DIR}/val_pred_step.npy',   val_ps)
+
+# ── Verify every write actually landed, before the metadata is written ──
+# Google Drive is mounted through a FUSE layer that buffers: np.save can return
+# while the bytes are still in flight, and the file left behind then has a header
+# promising the full array over a body that was never finished. numpy does raise
+# on that -- but only in whichever module reads it next, which may be hours later
+# and in a different cell, and the message ("file seems not fully written?") points
+# at the reader rather than at the write that failed here.
+#
+# Each file is checked two ways: its byte length against what the array in memory
+# needs, and an actual read of its last record, which forces the FUSE layer to
+# fetch the end of the file rather than serving a cached prefix.
+#
+# This runs BEFORE module4_metadata.json is written, which makes that file a commit
+# marker: if it exists, every array beside it was verified complete. The provenance
+# guards in Modules 5, 6 and 7 compare the arrays against it and rely on that.
+_written = {
+    'train_inputs.npy': train_inp,     'train_targets.npy': train_tgt,
+    'val_inputs.npy':   val_inp,       'val_targets.npy':   val_tgt,
+    'train_deltas.npy': train_deltas,  'val_deltas.npy':    val_deltas,
+    'train_disp_norm.npy': train_disp_norm, 'val_disp_norm.npy': val_disp_norm,
+    'train_video_id.npy':  train_vid,  'val_video_id.npy':  val_vid,
+    'train_pred_step.npy': train_ps,   'val_pred_step.npy': val_ps,
+}
+_damaged = []
+for _fn, _arr in _written.items():
+    _path = f'{COMBINED_DIR}/{_fn}'
+    try:
+        _on_disk = os.path.getsize(_path)
+        if _on_disk < _arr.nbytes:
+            _damaged.append(f'{_fn}: {_on_disk / 1e6:.1f} MB on disk, needs at least '
+                            f'{_arr.nbytes / 1e6:.1f} MB -- the write did not finish')
+            continue
+        _tail = np.load(_path, mmap_mode='r')[-1]     # touches the final record
+        if np.asarray(_tail).shape != _arr[-1].shape:
+            _damaged.append(f'{_fn}: last record is {np.asarray(_tail).shape}, '
+                            f'expected {_arr[-1].shape}')
+    except Exception as _e:
+        _damaged.append(f'{_fn}: {type(_e).__name__}: {_e}')
+
+if _damaged:
+    raise SystemExit(
+        '\n  ✗ MODULE 4 ARRAYS DID NOT SURVIVE THE WRITE\n      '
+        + '\n      '.join(_damaged)
+        + f'\n\n    {COMBINED_DIR} is on Google Drive, whose writes are buffered and can\n'
+          '    be reported as complete before they are. module4_metadata.json has NOT\n'
+          '    been written, so nothing downstream will treat this dataset as usable.\n'
+          '    Re-run this cell. If it fails again, remount Drive and re-run it.')
+print(f'  ✅ Verified   : {len(_written)} arrays written complete to {COMBINED_DIR}')
 
 meta4_out = {
     'videos'            : per_video_stats,

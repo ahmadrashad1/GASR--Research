@@ -1,0 +1,110 @@
+{
+  "_README": [
+    "Results already measured by the pipeline, transcribed here so the manuscript can",
+    "report real numbers before every module has been re-run on this machine.",
+    "",
+    "make_tables.py prefers the live JSON written by each module on Drive. This file is",
+    "used ONLY for quantities whose live file is absent, and any table built from it is",
+    "captioned as transcribed rather than read from a result file.",
+    "",
+    "Every entry carries a 'source' naming the run it came from. Entries marked",
+    "'read_from_figure': true were read off a plot axis and are therefore approximate to",
+    "the stated precision; the exact values live in module6_metrics.json and will replace",
+    "these automatically once Module 6 is re-run with the current code.",
+    "",
+    "DELETE AN ENTRY rather than editing it if you doubt it: a missing number prints as",
+    "[pending], which is honest, whereas a wrong number is not."
+  ],
+
+  "reconstruction": {
+    "source": "Module 2 evaluation cell, workspace_v2 (Video01), 219 frames",
+    "psnr_mean": 30.10,
+    "psnr_std": 1.49,
+    "ssim_mean": 0.9037,
+    "ssim_std": 0.0154,
+    "n_gaussians": 57943,
+    "n_visible": 19053,
+    "n_frames": 219,
+    "note": "Single video. The multi-video means will replace this once multi_video_summary.json is present."
+  },
+
+  "dataset": {
+    "source": "Module 4 build output",
+    "n_videos": 10,
+    "n_anchor": 512,
+    "window_size": 4,
+    "pred_steps": [1, 2, 3],
+    "total_train": 5910,
+    "total_val": 1461,
+    "mean_displacement_normalised": 0.004303,
+    "smoothing_autocorr_before": 0.077,
+    "smoothing_autocorr_after": 0.89
+  },
+
+  "training": {
+    "source": "Module 5, 500-epoch run, checkpoint selected at best validation",
+    "parameters": 16301059,
+    "epochs": 500,
+    "best_epoch_approx": 60,
+    "loss_initial": 0.36,
+    "loss_final": 0.012,
+    "val_cd_best": 0.01568,
+    "val_cd_naive": 0.01557,
+    "val_cd_final": 0.01700,
+    "val_subset_windows": 487
+  },
+
+  "comparison": {
+    "source": "Module 6 QT1, checkpoint epoch 60, full held-out set, 10 videos",
+    "read_from_figure": true,
+    "metric": "Chamfer Distance",
+    "methods": {
+      "Static (zero motion)":  {"1": 0.0093, "2": 0.0165, "3": 0.0222},
+      "Constant velocity":     {"1": 0.0055, "2": 0.0138, "3": 0.0187},
+      "Ours (diffusion)":      {"1": 0.0093, "2": 0.0165, "3": 0.0225}
+    },
+    "note": "Three methods only. The full eleven-method table requires Module 7."
+  },
+
+  "direction": {
+    "source": "Module 6 visual inference, rollout from frame 175, workspace_v2",
+    "cosine_by_step": {"1": 0.57, "2": 0.40, "3": 0.26, "5": -0.01, "10": -0.49},
+    "denoising_cosine_first_step": 0.30,
+    "denoising_cosine_last_step": 0.58
+  },
+
+  "rollout": {
+    "source": "Module 6 QT2",
+    "growth_exponent": 0.61,
+    "step10_model": 0.042,
+    "step10_naive": 0.042,
+    "step10_const_velocity": 0.078
+  },
+
+  "uncertainty": {
+    "source": "Module 6 QT3",
+    "spread_error_correlation": 0.69,
+    "mean_spread_step1": 0.00011,
+    "mean_spread_step10": 0.00055,
+    "n_hypotheses": 5
+  },
+
+  "image_space": {
+    "source": "Module 6 side-by-side, t+1, workspace_v2",
+    "reconstruction_psnr": 30.04,
+    "predicted_psnr": 26.79,
+    "naive_psnr": 26.74
+  },
+
+  "timeline": {
+    "source": "Module 6 timeline analysis",
+    "drift_rho": 0.02,
+    "drift_p": 0.610,
+    "origins_with_verified_timing": 333,
+    "origins_with_dropped_frames": 0,
+    "videos_losing_to_naive": 10,
+    "videos_total": 10,
+    "worst_video_deficit_pct": 4.7,
+    "best_video_deficit_pct": 0.2
+  }
+}

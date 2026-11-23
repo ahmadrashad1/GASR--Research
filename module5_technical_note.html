@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* Standalone-page reset. The hosted version gets this from its wrapper; a file opened
+     straight from disk needs it declared here, or the browser's default 8px body margin
+     fights the page's own layout. */
+  html { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Module 5: Deformation Learning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --paper:      #F7F8F7;
+    --surface:    #FFFFFF;
+    --sunken:     #EFF2F1;
+    --ink:        #141A1F;
+    --ink-soft:   #35434A;
+    --muted:      #5B6B72;
+    --rule:       #DCE3E3;
+    --rule-soft:  #E8EDEC;
+    --accent:     #1F6F6B;
+    --accent-dim: #E2EFED;
+    --problem:    #9A3B2E;
+    --problem-bg: #F5E7E4;
+    --fix:        #406B39;
+    --fix-bg:     #E7EFE4;
+
+    --f-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-body:    "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --f-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --measure: 68ch;
+    --rail: 3.5rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0F1417;
+      --surface:    #161D21;
+      --sunken:     #1B2429;
+      --ink:        #E3E9E8;
+      --ink-soft:   #C2CDCC;
+      --muted:      #8B9C9F;
+      --rule:       #2A363B;
+      --rule-soft:  #212B30;
+      --accent:     #58AEA6;
+      --accent-dim: #17312F;
+      --problem:    #D98B7C;
+      --problem-bg: #2E1E1A;
+      --fix:        #8FBE82;
+      --fix-bg:     #1C2A19;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0F1417;
+    --surface:    #161D21;
+    --sunken:     #1B2429;
+    --ink:        #E3E9E8;
+    --ink-soft:   #C2CDCC;
+    --muted:      #8B9C9F;
+    --rule:       #2A363B;
+    --rule-soft:  #212B30;
+    --accent:     #58AEA6;
+    --accent-dim: #17312F;
+    --problem:    #D98B7C;
+    --problem-bg: #2E1E1A;
+    --fix:        #8FBE82;
+    --fix-bg:     #1C2A19;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: calc(var(--measure) + var(--rail) + 4rem);
+    margin: 0 auto;
+    padding: 3.5rem 2rem 5rem;
+  }
+
+  /* ── Masthead ─────────────────────────────────────────── */
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.5rem; }
+
+  .eyebrow {
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 0 0 0.9rem;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 500;
+    font-size: clamp(2.1rem, 5.5vw, 3rem);
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 0.6rem;
+  }
+
+  .standfirst {
+    font-family: var(--f-display);
+    font-size: 1.13rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 58ch;
+    margin: 0;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.6rem;
+    margin-top: 1.4rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ── Pipeline strip ───────────────────────────────────── */
+  .pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0;
+    margin: 2.25rem 0 0;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .stage {
+    flex: 1 1 6.5rem;
+    padding: 0.7rem 0.85rem;
+    border-right: 1px solid var(--rule-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .stage:last-child { border-right: 0; }
+  .stage .n {
+    font-family: var(--f-mono);
+    font-size: 0.66rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .stage .lbl { font-size: 0.79rem; line-height: 1.3; color: var(--ink-soft); }
+  .stage.here { background: var(--accent-dim); }
+  .stage.here .n { color: var(--accent); font-weight: 500; }
+  .stage.here .lbl { color: var(--ink); font-weight: 600; }
+  .stage.next { background: var(--sunken); }
+
+  /* ── Sections ─────────────────────────────────────────── */
+  section { margin-top: 3.25rem; }
+
+  .sec-head {
+    display: grid;
+    grid-template-columns: var(--rail) 1fr;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-head .num {
+    font-family: var(--f-mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.5rem;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .body { max-width: var(--measure); margin-left: var(--rail); }
+  @media (max-width: 640px) {
+    .body { margin-left: 0; }
+    .sec-head { grid-template-columns: 1fr; gap: 0.2rem; }
+    .page { padding: 2.5rem 1.15rem 3.5rem; }
+  }
+
+  p { margin: 0 0 1rem; }
+  .body > p:last-child { margin-bottom: 0; }
+
+  code, .k {
+    font-family: var(--f-mono);
+    font-size: 0.855em;
+    background: var(--sunken);
+    padding: 0.1em 0.34em;
+    border-radius: 2px;
+    color: var(--ink-soft);
+  }
+
+  h3 {
+    font-family: var(--f-body);
+    font-size: 0.73rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--muted);
+    margin: 2rem 0 0.75rem;
+  }
+
+  /* ── Spec list (technology stack) ─────────────────────── */
+  .spec { display: grid; gap: 0; margin: 0; }
+  .spec > div {
+    display: grid;
+    grid-template-columns: 12.5rem 1fr;
+    gap: 0.3rem 1.25rem;
+    padding: 0.72rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    align-items: baseline;
+  }
+  .spec > div:first-child { border-top: 1px solid var(--rule); }
+  .spec dt {
+    font-weight: 600;
+    font-size: 0.87rem;
+    color: var(--ink);
+  }
+  .spec dd { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
+  .spec dd em { color: var(--muted); font-style: normal; }
+  @media (max-width: 560px) {
+    .spec > div { grid-template-columns: 1fr; }
+  }
+
+  /* ── Problem / fix pairs ──────────────────────────────── */
+  .pf { display: grid; gap: 1.15rem; margin: 0; }
+  .pf article {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 1.5rem;
+    border-left: 2px solid var(--rule);
+    padding-left: 1.1rem;
+  }
+  .pf article.major { border-left-color: var(--accent); }
+  .pf .tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    font-weight: 700;
+    display: inline-block;
+    padding: 0.12rem 0.4rem;
+    border-radius: 2px;
+    margin-bottom: 0.35rem;
+  }
+  .pf .tag.p { color: var(--problem); background: var(--problem-bg); }
+  .pf .tag.f { color: var(--fix); background: var(--fix-bg); }
+  .pf p { font-size: 0.895rem; margin: 0; line-height: 1.55; }
+  .pf .major-flag {
+    grid-column: 1 / -1;
+    font-size: 0.66rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 0.45rem;
+  }
+  @media (max-width: 640px) {
+    .pf article { grid-template-columns: 1fr; gap: 0.75rem; }
+  }
+
+  /* ── Status callout ───────────────────────────────────── */
+  .status {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--problem);
+    padding: 1.15rem 1.3rem;
+    margin: 0 0 1.15rem;
+  }
+  .status p { font-size: 0.92rem; }
+  .status p:last-child { margin-bottom: 0; }
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 0 1.5rem;
+    margin: 1rem 0 0;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .figures div { display: flex; flex-direction: column; gap: 0.1rem; }
+  .figures .v {
+    font-family: var(--f-mono);
+    font-size: 1.02rem;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .figures .c { font-size: 0.72rem; color: var(--muted); line-height: 1.35; }
+
+  /* ── Ordered / unordered lists ────────────────────────── */
+  ul.plain { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.9rem; }
+  ul.plain > li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.7rem;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  ul.plain > li::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 0.62em;
+  }
+  ul.plain strong { color: var(--ink); font-weight: 600; }
+
+  /* ── Shaped-module-6 table ────────────────────────────── */
+  .shaped { border-top: 1px solid var(--rule); }
+  .shaped > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem 1.5rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .shaped .from { font-size: 0.88rem; color: var(--muted); }
+  .shaped .to { font-size: 0.88rem; color: var(--ink-soft); }
+  .shaped .to strong { color: var(--ink); font-weight: 600; }
+  .shaped .hdr { font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+  @media (max-width: 640px) {
+    .shaped > div { grid-template-columns: 1fr; }
+    .shaped .from::after { content: " →"; color: var(--accent); }
+  }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.76rem;
+    color: var(--muted);
+    max-width: var(--measure);
+    margin-left: var(--rail);
+  }
+  @media (max-width: 640px) { footer { margin-left: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">GASR · 4D Surgical Scene Reconstruction · Technical Note</p>
+    <h1>Module 5: Diffusion-Based Deformation Learning</h1>
+    <p class="standfirst">A conditional diffusion model that learns how laparoscopic soft tissue
+      deforms — trained entirely without clinical labels, on geometry the pipeline reconstructs
+      for itself.</p>
+    <div class="meta">
+      <span><b>Dataset</b> 5,910 train / 1,461 val windows, 10 videos</span>
+      <span><b>Model</b> 15.8M parameters</span>
+      <span><b>Metric</b> Chamfer Distance</span>
+    </div>
+  </header>
+
+  <div class="pipeline">
+    <div class="stage"><span class="n">M1–M3</span><span class="lbl">Frames → 4D Gaussians → trajectory</span></div>
+    <div class="stage"><span class="n">M4</span><span class="lbl">Self-supervised windows</span></div>
+    <div class="stage here"><span class="n">M5</span><span class="lbl">Deformation learning</span></div>
+    <div class="stage next"><span class="n">M6</span><span class="lbl">Future prediction</span></div>
+    <div class="stage next"><span class="n">M7</span><span class="lbl">Evaluation</span></div>
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <div class="sec-head"><span class="num">01</span><h2>Where it sits</h2></div>
+    <div class="body">
+      <p>Modules 1–3 reconstruct the surgical scene in 4D and export a per-frame trajectory of
+        Gaussian centres. Module 4 turns that trajectory into supervision without labels: 512
+        anchor Gaussians per video tracked by identity, sliding context windows of
+        <code>W&nbsp;=&nbsp;4</code> frames, and targets at three horizons
+        <code>k&nbsp;∈&nbsp;{1,2,3}</code>.</p>
+      <p>Module 5 is the generative core. It learns the conditional distribution
+        <em>p(ΔG | past geometry, horizon)</em> — how the tissue moves next, given how it has been
+        moving. Its output is not a picture but a sampler, which is what Module 6 then queries for
+        actual predictions.</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <div class="sec-head"><span class="num">02</span><h2>The technology, and why each piece is there</h2></div>
+    <div class="body">
+      <dl class="spec">
+        <div><dt>Conditional DDPM</dt><dd>Learns a distribution rather than a single answer — tissue deformation is genuinely uncertain, and the project needs <em>multiple plausible futures</em>, not one.</dd></div>
+        <div><dt>v-prediction</dt><dd>Predicts the diffusion velocity instead of the noise. Far better conditioned at the tiny displacement magnitudes here <em>(~0.004 normalised units)</em>.</dd></div>
+        <div><dt>Cosine schedule, <span class="k">T = 500</span></dt><dd>Spends more steps at high signal-to-noise, where small displacements actually live.</dd></div>
+        <div><dt>Min-SNR-γ, <span class="k">γ = 5</span></dt><dd>Stops easy low-noise timesteps from dominating the loss.</dd></div>
+        <div><dt>Residual target</dt><dd>The model predicts <span class="k">ΔG = G<sub>t+k</sub> − G<sub>t</sub></span>, never absolute position. See §3.</dd></div>
+        <div><dt>GeomMLP encoders</dt><dd>A shared 4-layer pointwise encoder lifts each of the 512 anchors to a 512-d latent — one network, applied per point.</dd></div>
+        <div><dt>Temporal transformer</dt><dd>Self-attention across the <span class="k">W = 4</span> frame axis, points folded into the batch, with last-token pooling: the most recent frame is the most predictive one.</dd></div>
+        <div><dt>Horizon embedding</dt><dd>Tells the network <em>how far ahead</em> it is being asked to predict. The single most consequential fix in the module — see §3.</dd></div>
+        <div><dt>Dual cross-attention</dt><dd>Context and noisy target exchange information in both directions over the point axis, so geometry informs the denoiser rather than only conditioning it.</dd></div>
+        <div><dt>EMA, <span class="k">0.9999</span></dt><dd>Averages out gradient noise; the EMA weights are the inference model throughout the project.</dd></div>
+        <div><dt>DDIM sampling</dt><dd><span class="k">η = 0</span> gives a deterministic prediction for scoring; <span class="k">η &gt; 0</span> gives the multi-hypothesis fan-out Module 6 needs.</dd></div>
+        <div><dt>T4-fitting details</dt><dd>Mixed-precision fp16, gradient accumulation (micro-batch 16 × 2 ≡ batch 32), 3 transformer layers instead of 6 — all to fit a full run inside one Colab session.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <div class="sec-head"><span class="num">03</span><h2>Problems encountered, and what fixed them</h2></div>
+    <div class="body">
+      <div class="pf">
+
+        <article>
+          <div><span class="tag p">Problem</span><p>Generating 512 absolute 3D coordinates from pure noise was intractable on this much data — <span class="k">CD = 2.3</span> against a naive baseline of <span class="k">0.0005</span>.</p></div>
+          <div><span class="tag f">Fix</span><p>Predict displacement residuals instead. The model only has to produce small motion vectors, which is well within reach at this dataset size.</p></div>
+        </article>
+
+        <article>
+          <div><span class="tag p">Problem</span><p>Those residuals were then <em>too</em> small. At ~0.004 normalised units the signal was drowned by unit-scale diffusion noise.</p></div>
+          <div><span class="tag f">Fix</span><p>Rescale by <span class="k">DATA_SCALE = 1/std(Δ)</span> so the diffusion process sees a near-unit-variance target. Inverted before every metric, so evaluation stays in physical units.</p></div>
+        </article>
+
+        <article>
+          <div><span class="tag p">Problem</span><p>The raw trajectory was dominated by reconstruction noise: consecutive displacements had almost no momentum <span class="k">(r = 0.077)</span>, and constant-velocity extrapolation <em>lost</em> to a do-nothing baseline by 27–58%.</p></div>
+          <div><span class="tag f">Fix</span><p>Adaptive per-video Savitzky–Golay smoothing, with each video choosing its own window. Autocorrelation rose to <span class="k">0.89</span> and constant velocity went to <em>beating</em> naive by 30–57% — proving a learnable signal existed and was simply buried.</p></div>
+        </article>
+
+        <article>
+          <div><span class="tag p">Problem</span><p>High-motion videos dominated the training signal; the model fit them and ignored the rest.</p></div>
+          <div><span class="tag f">Fix</span><p>Per-video displacement equalisation in Module 4 — each video's target delta scaled to a common reference before training.</p></div>
+        </article>
+
+        <article class="major">
+          <p class="major-flag">The one that mattered most</p>
+          <div><span class="tag p">Problem</span><p>Module 4's multi-step augmentation puts the <em>same</em> context window in the dataset three times with three different targets, 1, 2 and 3 frames ahead. Module 5 was never told which. The objective was therefore a mixture over an unobservable variable, and no amount of training could resolve it — a constant-velocity predictor, <span class="k">last + v·k</span>, was not even representable without <span class="k">k</span>.</p></div>
+          <div><span class="tag f">Fix</span><p>A horizon embedding injected into both the context and target branches, making the objective well-posed. This also explained an earlier plateau: training had stopped at epoch 460/1000 on what looked like convergence but was the ceiling of a broken problem statement, so early stopping was disabled.</p></div>
+        </article>
+
+        <article>
+          <div><span class="tag p">Problem</span><p>Several results were measurement artefacts rather than model behaviour: diagnostic subsets took the first N windows, which all came from one video (~0.005 CD against a true ~0.019); scoring a single random DDIM draw charged the model a ~√2 error penalty; and resuming a checkpoint after Module 4 was re-run carried stale early-stopping state onto new data.</p></div>
+          <div><span class="tag f">Fix</span><p>Strided subsets that span every video; N-sample ensemble averaging, since Chamfer Distance is minimised by the conditional mean and not by a draw from it; and a dataset fingerprint plus an LR-horizon guard stored in the checkpoint, so an invalid resume refuses rather than corrupting a run.</p></div>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <div class="sec-head"><span class="num">04</span><h2>Where it currently stands</h2></div>
+    <div class="body">
+      <div class="status">
+        <p><strong>Module 5 does not yet beat the naive zero-motion baseline</strong> at every horizon
+          (QT2 and QT5). The infrastructure is sound and the objective is now well-posed, but the
+          predictive claim is not yet earned.</p>
+        <p>The honest bar is not naive anyway. Module 4 established that constant-velocity
+          extrapolation beats naive by 30–57% on this exact data, so a two-line estimator — not a
+          do-nothing one — is what 15.8M parameters have to justify themselves against. Every table
+          in Modules 5 and 6 now reports all three side by side.</p>
+        <div class="figures">
+          <div><span class="v">0.077 → 0.89</span><span class="c">Displacement autocorrelation, before → after smoothing</span></div>
+          <div><span class="v">30–57%</span><span class="c">Constant velocity's margin over naive</span></div>
+          <div><span class="v">3 → 1</span><span class="c">Mixture components in the objective, after horizon conditioning</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <div class="sec-head"><span class="num">05</span><h2>Future improvements</h2></div>
+    <div class="body">
+      <ul class="plain">
+        <li><strong>Learn the correction to constant velocity, not the raw displacement.</strong>
+          Constant velocity already works here; the model does not. Making it the prior and having
+          the diffusion model predict only the residual to it means the network starts from a known-good
+          estimator and can only improve on it, rather than having to rediscover it from scratch.</li>
+        <li><strong>Attack the upstream ceiling.</strong> Module 2 assumes a perfectly static camera,
+          so real scope motion is forced into the deformation field, and monocular depth is estimated
+          per frame with no temporal consistency term. The smoothing fix treats the symptom; a temporal
+          depth term and camera-motion handling would treat the cause.</li>
+        <li><strong>Widen the horizon coverage.</strong> The embedding table already has room for
+          <span class="k">k ≤ 8</span> but only rows 1–3 were ever trained. Extending Module 4's
+          <span class="k">PRED_STEPS</span> costs no new data and would let direct prediction reach
+          further without a rollout.</li>
+        <li><strong>Regularisation sweep.</strong> With early stopping off, weight decay is now the
+          main defence against late-run overfitting; raising it toward <span class="k">0.05</span> is
+          the first knob to try if the validation curve turns upward early.</li>
+        <li><strong>More scenes.</strong> Ten videos is a small dataset for a generative model, and
+          cross-scene generalisation is a stated validation goal.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <div class="sec-head"><span class="num">06</span><h2>How this shaped Module 6</h2></div>
+    <div class="body">
+      <p>Module 6 is inference, not training: it conditions the trained model on observed geometry and
+        samples future tissue geometry. Nearly every design decision in it is a direct consequence of
+        something Module 5 got wrong first.</p>
+      <div class="shaped">
+        <div><span class="hdr">Lesson from Module 5</span><span class="hdr">Consequence in Module 6</span></div>
+        <div>
+          <span class="from">Horizons 4–8 exist in the embedding but were never trained</span>
+          <span class="to"><strong>Direct prediction is capped at k ≤ 3.</strong> Longer horizons are reached by autoregressive rollout instead, never by reading an untrained embedding row.</span>
+        </div>
+        <div>
+          <span class="from">Biased subsets made diagnostics read 4× better than reality</span>
+          <span class="to"><strong>QT0 runs before any prediction</strong>, verifying the rebuilt trajectory is identical to what Module 5 trained on, and every origin is a genuine held-out window.</span>
+        </div>
+        <div>
+          <span class="from">A single DDIM draw is ~√2 worse than the conditional mean</span>
+          <span class="to"><strong>N-sample ensemble averaging is the default</strong>, with the single-draw number still reported so the cost of sampling stays visible.</span>
+        </div>
+        <div>
+          <span class="from">Naive is a weak bar; constant velocity is the real one</span>
+          <span class="to"><strong>Both baselines appear at every horizon</strong> on identical windows, and the verdict is stated against each.</span>
+        </div>
+        <div>
+          <span class="from">A model can score well by collapsing toward "nothing moves"</span>
+          <span class="to"><strong>A smoothness test</strong> compares predicted motion against the real tissue's, catching both tearing and collapse — which Chamfer Distance alone cannot distinguish.</span>
+        </div>
+        <div>
+          <span class="from">Diversity is not the same as confidence</span>
+          <span class="to"><strong>The 5-hypothesis fan-out is calibration-checked:</strong> if the spread does not track the error, it is reported as diversity and explicitly not as a confidence signal.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>GASR — 4D Surgical Scene Reconstruction &amp; Deformation Prediction ·
+      FAST NUCES Islamabad · Supervised by Dr Akhtar Jamil.
+      Figures cited from Module 4 quality tests QT1–QT7 and Module 5 QT1–QT6.</p>
+  </footer>
+
+</div>
+</body>
+</html>

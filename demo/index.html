@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tissue Deformation Prediction</title>
+<style>
+:root{
+  --bg:#050506; --panel:#0A0A0C; --char:#131317;
+  --crimson:#5C0A0A; --blood:#D62828; --white:#F5F5F7;
+  --flesh:#C98276; --dim:#75757E; --line:rgba(245,245,247,.11);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--white);
+  font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+header{
+  padding:14px 20px; border-bottom:1px solid var(--line);
+  display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+}
+h1{font-size:15px; font-weight:600; letter-spacing:.01em}
+h1 span{color:var(--blood)}
+.meta{color:var(--dim); font-size:12px; font-variant-numeric:tabular-nums}
+.badge{
+  font-size:11px; padding:2px 8px; border-radius:99px;
+  border:1px solid var(--line); color:var(--dim);
+}
+main{flex:1; display:flex; min-height:0}
+#stage{flex:1; position:relative; min-width:0}
+canvas{display:block; width:100%; height:100%; cursor:grab}
+canvas:active{cursor:grabbing}
+#hint{
+  position:absolute; left:16px; bottom:14px; color:var(--dim);
+  font-size:11px; pointer-events:none;
+}
+aside{
+  width:300px; flex:none; border-left:1px solid var(--line);
+  background:var(--panel); padding:18px; overflow-y:auto;
+}
+.grp{margin-bottom:22px}
+.grp h2{
+  font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--dim); font-weight:600; margin-bottom:10px;
+}
+.row{display:flex; align-items:center; gap:9px; padding:5px 0; cursor:pointer}
+.row input{accent-color:var(--blood); cursor:pointer; width:15px; height:15px}
+.swatch{width:10px; height:10px; border-radius:50%; flex:none}
+.row label{cursor:pointer; flex:1}
+.seg{display:flex; gap:6px}
+.seg button{
+  flex:1; background:var(--char); color:var(--dim); border:1px solid var(--line);
+  padding:7px 0; border-radius:6px; font:inherit; font-size:13px; cursor:pointer;
+}
+.seg button[aria-pressed="true"]{background:var(--crimson); color:var(--white); border-color:var(--blood)}
+.transport{display:flex; gap:8px; align-items:center; margin-bottom:10px}
+.transport button{
+  background:var(--crimson); color:var(--white); border:none; border-radius:6px;
+  width:40px; height:34px; font-size:14px; cursor:pointer;
+}
+input[type=range]{width:100%; accent-color:var(--blood)}
+table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+th,td{text-align:right; padding:5px 0; font-size:13px}
+th{color:var(--dim); font-weight:400; text-align:left}
+td.win{color:var(--blood); font-weight:600}
+.note{
+  font-size:11.5px; color:var(--dim); line-height:1.6;
+  border-left:2px solid var(--crimson); padding-left:11px;
+}
+@media(max-width:820px){
+  main{flex-direction:column}
+  aside{width:100%; border-left:none; border-top:1px solid var(--line); max-height:48%}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>4D Surgical Scene &mdash; <span>Deformation Prediction</span></h1>
+  <div class="meta" id="meta">loading&hellip;</div>
+  <div class="badge" id="src">&mdash;</div>
+</header>
+
+<main>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hint">drag to orbit &middot; scroll to zoom</div>
+  </div>
+
+  <aside>
+    <div class="grp">
+      <h2>Playback</h2>
+      <div class="transport">
+        <button id="play">&#9654;</button>
+        <span class="meta" id="tlabel">frame &mdash;</span>
+      </div>
+      <input type="range" id="scrub" min="0" max="0" value="0">
+    </div>
+
+    <div class="grp">
+      <h2>Prediction horizon</h2>
+      <div class="seg" id="kseg"></div>
+    </div>
+
+    <div class="grp">
+      <h2>Layers</h2>
+      <div class="row"><input type="checkbox" id="l_gt" checked>
+        <span class="swatch" style="background:#F5F5F7"></span>
+        <label for="l_gt">Ground truth</label></div>
+      <div class="row"><input type="checkbox" id="l_pred" checked>
+        <span class="swatch" style="background:#D62828"></span>
+        <label for="l_pred">Ours &mdash; diffusion</label></div>
+      <div class="row"><input type="checkbox" id="l_cv" checked>
+        <span class="swatch" style="background:#C98276"></span>
+        <label for="l_cv">Constant velocity</label></div>
+      <div class="row"><input type="checkbox" id="l_sig" checked>
+        <span class="swatch" style="background:#5C0A0A"></span>
+        <label for="l_sig">Uncertainty</label></div>
+      <div class="row"><input type="checkbox" id="l_err">
+        <span class="swatch" style="background:rgba(245,245,247,.3)"></span>
+        <label for="l_err">Error vectors</label></div>
+    </div>
+
+    <div class="grp">
+      <h2>Mean point error &mdash; this frame</h2>
+      <table id="live"></table>
+    </div>
+
+    <div class="grp">
+      <h2>Over the whole held-out tail</h2>
+      <table id="agg"></table>
+    </div>
+
+    <div class="grp">
+      <p class="note" id="verdict"></p>
+    </div>
+  </aside>
+</main>
+
+<script>
+const PAL = {gt:'#F5F5F7', pred:'#D62828', cv:'#C98276', sig:'#5C0A0A'};
+const $ = id => document.getElementById(id);
+let D=null, K=1, frame=0, playing=false, yaw=.6, pitch=-.25, zoom=1;
+
+/* ── data ───────────────────────────────────────────────────────── */
+function unflat(a, n){            // flat [x,y,z,...] -> [[x,y,z],...]
+  const o = new Array(n);
+  for (let i=0;i<n;i++) o[i] = [a[3*i], a[3*i+1], a[3*i+2]];
+  return o;
+}
+function hydrate(d){
+  d.frames.forEach(f=>{
+    f.ctxP = unflat(f.ctx, d.n_points);
+    d.horizons.forEach(k=>{
+      f['gtP'+k]   = unflat(f['gt'+k],   d.n_points);
+      f['predP'+k] = unflat(f['pred'+k], d.n_points);
+      f['cvP'+k]   = unflat(f['cv'+k],   d.n_points);
+    });
+  });
+  return d;
+}
+
+/* Synthetic stand-in so the viewer runs before Module 9 has been exported.
+   Shaped like the real thing -- a breathing surface with local deformation --
+   and labelled as synthetic everywhere, because a demo that silently invents
+   results is worse than one that does not run. */
+function synth(){
+  const N=256, F=80, H=[1,3], frames=[];
+  const base=[];
+  for(let i=0;i<N;i++){
+    const u=(i%16)/15-.5, v=Math.floor(i/16)/15-.5;
+    base.push([u*1.6, v*1.6, .25*Math.sin(u*5)*Math.cos(v*4)]);
+  }
+  const pos=(t)=>base.map(([x,y,z],i)=>{
+    const br=.055*Math.sin(t*.16), lo=.035*Math.sin(t*.27+x*3.1+y*2.3);
+    return [x+lo*.35, y+br*.5, z+br+lo];
+  });
+  for(let n=0;n<F;n++){
+    const t=n+8, f={t:t};
+    f.ctxP=pos(t-1);
+    H.forEach(k=>{
+      const gt=pos(t+k-1), prev=pos(t-2), cur=pos(t-1);
+      f['gtP'+k]=gt;
+      f['cvP'+k]=cur.map((p,i)=>p.map((c,d)=>c+(c-prev[i][d])*k));
+      // Error roughly flat in k, where constant velocity's grows with it -- the shape
+      // of the real finding, so the placeholder does not teach the wrong lesson.
+      f['predP'+k]=gt.map((p,i)=>p.map((c,d)=>c+(Math.sin(i*2.7+d+n*.1))*.0045));
+    });
+    f.sigma=base.map((_,i)=>.004+.004*Math.abs(Math.sin(i*1.3+n*.08)));
+    frames.push(f);
+  }
+  return {video:'synthetic', n_points:N, n_frames:F, horizons:H, window:8,
+          centre:[0,0,0], radius:1.0, synthetic:true, target_mode:'—',
+          checkpoint_epoch:'—', frames, mean_error:null};
+}
+
+/* ── projection ─────────────────────────────────────────────────── */
+let W=0, Hh=0, DPR=1;
+function project(p){
+  const c=D.centre, s=1/D.radius;
+  let x=(p[0]-c[0])*s, y=(p[1]-c[1])*s, z=(p[2]-c[2])*s;
+  const cy=Math.cos(yaw), sy=Math.sin(yaw);
+  [x,z]=[x*cy - z*sy, x*sy + z*cy];
+  const cp=Math.cos(pitch), sp=Math.sin(pitch);
+  [y,z]=[y*cp - z*sp, y*sp + z*cp];
+  const k=Math.min(W,Hh)*.40*zoom;
+  return [W/2 + x*k, Hh/2 - y*k, z];
+}
+function dist(a,b){const dx=a[0]-b[0],dy=a[1]-b[1],dz=a[2]-b[2];
+  return Math.sqrt(dx*dx+dy*dy+dz*dz);}
+function meanErr(a,b){let s=0; for(let i=0;i<a.length;i++) s+=dist(a[i],b[i]);
+  return s/a.length;}
+
+/* ── render ─────────────────────────────────────────────────────── */
+const cv=$('cv'), ctx=cv.getContext('2d');
+function resize(){
+  DPR=Math.min(devicePixelRatio||1,2);
+  const r=cv.parentElement.getBoundingClientRect();
+  W=r.width; Hh=r.height;
+  cv.width=W*DPR; cv.height=Hh*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+addEventListener('resize',()=>{resize();draw();});
+
+function draw(){
+  if(!D) return;
+  const f=D.frames[frame];
+  ctx.clearRect(0,0,W,Hh);
+
+  const gt=f['gtP'+K], pr=f['predP'+K], cvp=f['cvP'+K];
+  const order=gt.map((_,i)=>i).sort((a,b)=>project(gt[b])[2]-project(gt[a])[2]);
+  const sMax=Math.max(...f.sigma);
+
+  for(const i of order){
+    const g=project(gt[i]);
+
+    if($('l_sig').checked){
+      const rr=3+22*(f.sigma[i]/(sMax||1));
+      const p=project(pr[i]);
+      ctx.beginPath(); ctx.arc(p[0],p[1],rr,0,6.2832);
+      ctx.fillStyle=PAL.sig; ctx.globalAlpha=.30; ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    if($('l_err').checked && $('l_pred').checked){
+      const p=project(pr[i]);
+      ctx.beginPath(); ctx.moveTo(g[0],g[1]); ctx.lineTo(p[0],p[1]);
+      ctx.strokeStyle='rgba(245,245,247,.30)'; ctx.lineWidth=1; ctx.stroke();
+    }
+    if($('l_cv').checked){
+      const c=project(cvp[i]);
+      ctx.beginPath(); ctx.arc(c[0],c[1],2.0,0,6.2832);
+      ctx.fillStyle=PAL.cv; ctx.globalAlpha=.75; ctx.fill(); ctx.globalAlpha=1;
+    }
+    if($('l_gt').checked){
+      ctx.beginPath(); ctx.arc(g[0],g[1],1.7,0,6.2832);
+      ctx.fillStyle=PAL.gt; ctx.globalAlpha=.70; ctx.fill(); ctx.globalAlpha=1;
+    }
+    if($('l_pred').checked){
+      const p=project(pr[i]);
+      ctx.beginPath(); ctx.arc(p[0],p[1],2.4,0,6.2832);
+      ctx.fillStyle=PAL.pred; ctx.fill();
+    }
+  }
+
+  $('tlabel').textContent=`frame ${f.t}`;
+  $('scrub').value=frame;
+
+  const e={ours:meanErr(pr,gt), cv:meanErr(cvp,gt), still:meanErr(f.ctxP,gt)};
+  const best=Object.keys(e).reduce((a,b)=>e[a]<e[b]?a:b);
+  const NAME={ours:'Ours — diffusion', cv:'Constant velocity', still:'No motion'};
+  $('live').innerHTML=Object.keys(e).map(k=>
+    `<tr><th>${NAME[k]}</th><td class="${k===best?'win':''}">${e[k].toFixed(5)}</td></tr>`
+  ).join('');
+}
+
+/* ── interaction ────────────────────────────────────────────────── */
+let drag=null;
+cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{
+  if(!drag) return;
+  yaw+=(e.clientX-drag[0])*.008; pitch+=(e.clientY-drag[1])*.008;
+  pitch=Math.max(-1.5,Math.min(1.5,pitch)); drag=[e.clientX,e.clientY]; draw();
+});
+addEventListener('pointerup',()=>drag=null);
+cv.addEventListener('wheel',e=>{
+  e.preventDefault(); zoom=Math.max(.3,Math.min(5,zoom*(e.deltaY>0?.92:1.08))); draw();
+},{passive:false});
+
+$('scrub').addEventListener('input',e=>{frame=+e.target.value; draw();});
+$('play').addEventListener('click',()=>{
+  playing=!playing; $('play').innerHTML=playing?'&#10074;&#10074;':'&#9654;';
+});
+['l_gt','l_pred','l_cv','l_sig','l_err'].forEach(id=>$(id).addEventListener('change',draw));
+
+function tick(){
+  if(playing && D){ frame=(frame+1)%D.n_frames; draw(); }
+  setTimeout(()=>requestAnimationFrame(tick), 90);
+}
+
+/* ── boot ───────────────────────────────────────────────────────── */
+function aggTable(){
+  if(!D.mean_error){ $('agg').innerHTML='<tr><th>not exported</th><td>&mdash;</td></tr>'; return; }
+  const e=D.mean_error[String(K)];
+  if(!e){ $('agg').innerHTML=''; return; }
+  const best=Object.keys(e).reduce((a,b)=>e[a]<e[b]?a:b);
+  const NAME={ours:'Ours — diffusion', cv:'Constant velocity', still:'No motion'};
+  $('agg').innerHTML=Object.keys(e).map(k=>
+    `<tr><th>${NAME[k]}</th><td class="${k===best?'win':''}">${e[k].toFixed(5)}</td></tr>`
+  ).join('');
+}
+function verdict(){
+  const m=D.mean_error;
+  if(!m){ $('verdict').textContent=
+    'Showing synthetic data. Run Module 9 after Module 6 and place demo_data.json beside this file to see measured predictions.'; return; }
+  const k1=m['1'], k3=m[String(Math.max(...D.horizons))];
+  const w1=k1 && k1.cv<k1.ours ? 'constant velocity' : 'the learned model';
+  const w3=k3 && k3.cv<k3.ours ? 'constant velocity' : 'the learned model';
+  $('verdict').textContent =
+    `At one frame ahead ${w1} is more accurate; at ${Math.max(...D.horizons)} frames ahead ${w3} is. ` +
+    `Straight-line extrapolation diverges as the horizon grows, which is why the crossover exists. ` +
+    `The shaded halo is the model's own uncertainty — no baseline here provides one.`;
+}
+function setK(k){
+  K=k;
+  [...$('kseg').children].forEach(b=>b.setAttribute('aria-pressed', +b.dataset.k===k));
+  aggTable(); verdict(); draw();
+}
+async function boot(){
+  let real=true;
+  try{
+    const r=await fetch('demo_data.json',{cache:'no-store'});
+    if(!r.ok) throw 0;
+    D=hydrate(await r.json());
+  }catch(_){ D=synth(); real=false; }
+
+  $('src').textContent = real ? 'measured' : 'synthetic — demo_data.json not found';
+  $('src').style.color = real ? 'var(--flesh)' : 'var(--blood)';
+  $('meta').textContent =
+    `${D.video} · ${D.n_points} tracked points · ${D.n_frames} held-out origins` +
+    (real ? ` · W=${D.window} · ${D.target_mode} · epoch ${D.checkpoint_epoch}` : '');
+
+  $('kseg').innerHTML = D.horizons.map(k=>
+    `<button data-k="${k}" aria-pressed="${k===D.horizons[0]}">k = ${k}</button>`).join('');
+  [...$('kseg').children].forEach(b=>b.onclick=()=>setK(+b.dataset.k));
+
+  $('scrub').max = D.n_frames-1;
+  resize(); setK(D.horizons[0]); tick();
+}
+boot();
+</script>
+</body>
+</html>
