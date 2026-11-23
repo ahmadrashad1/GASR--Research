@@ -197,8 +197,19 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(380px,34%)_1fr]">
-        <section className="overflow-y-auto border-r border-edge px-7 py-6">
+      {/* grid-rows-[minmax(0,1fr)] is load-bearing. A grid's implicit row is `auto`,
+          which sizes to its content, so without it the row grew past this element's
+          own height and the 3D canvas spilled down over the footer: the canvas is
+          sized h-full, that percentage resolved against an auto-height parent, and it
+          fell back to the canvas's intrinsic height -- which paint() had just set from
+          the measured box. The loop settled at 1200px inside a 599px window at 720p.
+          minmax(0,1fr) pins the row to the available height and lets it shrink. */}
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(380px,34%)_1fr]
+                       grid-rows-[minmax(0,1fr)]">
+        {/* `narration` is the hook for the short-viewport rules in index.css. This
+            column holds more than a 720p projector has room for, so below 900px of
+            height it tightens rather than silently scrolling four of seven scenes. */}
+        <section className="narration overflow-y-auto border-r border-edge px-7 py-6">
           <div className="text-sm font-bold tracking-[0.17em] text-blood">
             SCENE {si + 1} OF {SCENES.length}
           </div>
@@ -206,26 +217,37 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
           <p className="mb-5 text-lg text-[#D8D8DE]">{fill(scene.body)}{missing}</p>
 
           {notes.map((n, i) => (
-            <div key={i} className="mb-4 border-l-[3px] border-blood bg-blood/10
+            <div key={i} className="caveat mb-4 border-l-[3px] border-blood bg-blood/10
                                     px-4 py-3 text-base text-[#F0CFCF]">{n}</div>
           ))}
 
-          {(scene.id === 'baselines' || scene.id === 'standing') && (
-            <Readout data={shown} k={k} placeholder={placeholder} fill={fill} />
-          )}
+          {/* Ordered after the caveats here and before them on a short viewport -- see
+              the `order` rules in index.css. At 720p the caveats pushed this table far
+              enough down that only its first row, our own, was above the fold: the
+              page would have shown "GASR 82%" with the two baselines it is being
+              compared against hidden. A comparative claim with the comparison out of
+              sight is the one thing this demonstrator must not do. The caveats
+              describe how the overlay is drawn; they lose nothing by following. */}
+          <div className="readout-slot">
+            {(scene.id === 'baselines' || scene.id === 'standing') && (
+              <Readout data={shown} k={k} placeholder={placeholder} fill={fill} />
+            )}
+          </div>
 
-          {live && !placeholder && (
-            <LivePanel info={live} row={isLive ? liveRow : null} busy={liveBusy}
-                       error={liveError} origin={askOrigin} fill={fill} />
-          )}
+          <div className="live-slot">
+            {live && !placeholder && (
+              <LivePanel info={live} row={isLive ? liveRow : null} busy={liveBusy}
+                         error={liveError} origin={askOrigin} fill={fill} />
+            )}
 
-          {liveRefused && !placeholder && (
-            <div className="mt-6 border-l-[3px] border-blood bg-blood/10 px-4 py-3
-                            text-base text-[#F0CFCF]">
-              Live inference is available but was refused: {liveRefused}. The exported
-              measurement on this page is unaffected.
-            </div>
-          )}
+            {liveRefused && !placeholder && (
+              <div className="mt-6 border-l-[3px] border-blood bg-blood/10 px-4 py-3
+                              text-base text-[#F0CFCF]">
+                Live inference is available but was refused: {liveRefused}. The exported
+                measurement on this page is unaffected.
+              </div>
+            )}
+          </div>
         </section>
 
         <Stage

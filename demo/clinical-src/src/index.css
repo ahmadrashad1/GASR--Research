@@ -14,3 +14,60 @@
 
 html, body, #root { height: 100%; }
 body { margin: 0; background: var(--color-stage); color: var(--color-bone); overflow: hidden; }
+
+/* The narration column is the only scrollable region on the page, and `overflow:
+   hidden` on the body means a reader gets no other hint that there is more. Keep its
+   scrollbar drawn rather than letting the platform hide it until hover: whoever is
+   driving the demonstration is sitting at the laptop and needs to know.
+
+   `scrollbar-gutter: stable` is what actually does it. This platform draws overlay
+   scrollbars, so `scrollbar-width` reserved no space at all -- measured: a 1px gutter,
+   which was only the border -- and the column scrolled with nothing to say so. The
+   gutter is reserved on every scene, not just the ones that scroll, so moving between
+   scenes does not shift the text sideways. */
+.narration {
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--color-dim) transparent;
+}
+.narration::-webkit-scrollbar { width: 10px; }
+.narration::-webkit-scrollbar-thumb {
+  background: var(--color-dim); border-radius: 5px;
+  border: 3px solid var(--color-stage);
+}
+
+/* Short viewports: 720p and 768p projectors.
+ *
+ * At 1280x720 the narration column has about 600px and four of the seven scenes
+ * wanted more -- the densest, which carries both caveats and the comparison table,
+ * wanted 1288px. Scrolling past a caveat is the one failure this page is written to
+ * avoid, so below 900px of height the type and rhythm tighten and the column takes a
+ * larger share of the width. Nothing here applies at 1080p or on the laptop's own
+ * screen, where the generous sizes are unchanged.
+ *
+ * This still leaves the densest scene slightly over, which is why the scrollbar above
+ * is always drawn. Shrinking the rest of the way would cost more legibility from the
+ * back of a room than one short scroll costs. */
+@media (max-height: 1099px) and (max-width: 1799px) {
+  main:has(> .narration) { grid-template-columns: minmax(420px, 44%) 1fr; }
+  .narration { padding: 14px 20px; }
+  .narration h2 { font-size: 25px; margin-top: 4px; margin-bottom: 10px; }
+  .narration > p { font-size: 16px; margin-bottom: 12px; }
+  .narration div[class*="border-l-"] {
+    padding: 8px 12px; margin-bottom: 10px; font-size: 14px;
+  }
+  .narration table { font-size: 15px; }
+
+  /* Put the measurement above the caveats about how the overlay is drawn, so the
+     whole comparison clears the fold instead of just its first row.
+     `order` moves the painted position without moving the element, so a screen reader
+     still hears the caveats first, in source order. That mismatch is the usual reason
+     to avoid `order`; it is harmless here because none of these blocks is focusable,
+     so there is no tab sequence to disagree with.
+     flex-shrink:0 because a column flex item shrinks below its content by default,
+     which in a scrolling column squashes the text instead of scrolling it. */
+  .narration { display: flex; flex-direction: column; }
+  .narration > * { flex-shrink: 0; }
+  .narration .readout-slot { order: 2; }
+  .narration .caveat { order: 3; }
+  .narration .live-slot { order: 4; }
+}

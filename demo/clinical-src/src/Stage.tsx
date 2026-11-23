@@ -195,9 +195,12 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
   const cols = wantsFrame && hasGeometry ? 'grid-cols-2' : 'grid-cols-1';
 
   return (
-    <section className={`grid ${cols} min-w-0`}>
+    // min-h-0 on every level: a grid item's default min-height is auto, which refuses
+    // to shrink below its content, so one unconstrained level anywhere down this chain
+    // is enough to let the canvas push the layout past the window.
+    <section className={`grid ${cols} min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]`}>
       {wantsFrame && (
-        <div className="relative border-r border-edge">
+        <div className="relative min-h-0 border-r border-edge">
           {src ? (
             <>
               <img
@@ -222,7 +225,7 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
       )}
 
       {hasGeometry && (
-        <div className="relative min-w-0">
+        <div className="relative min-h-0 min-w-0">
           <canvas
             ref={geomRef}
             className="block h-full w-full touch-none"
