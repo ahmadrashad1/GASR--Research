@@ -16,7 +16,19 @@ WINDOW_SIZE  = 32       # was 4. Raised to test whether a longer context supplie
                          # could not span any periodic structure at all. Costs ~11% of
                          # the windows (a window needs W+k frames) and 8x the context
                          # tensor on disk. Module 8 Study B measures whether it paid.
-PRED_STEPS   = [1, 2, 3]
+# The horizons the dataset carries, and therefore the only ones the model can ever
+# learn. Module 5's MAX_PRED_STEP only sizes the embedding TABLE: a row the data never
+# visits keeps its random initialisation, and asking for that horizon later returns
+# confident nonsense rather than an error. Until 2026-11-24 this read [1, 2, 3] while
+# MAX_PRED_STEP was 8, so rows 4-8 were untrained and k>3 was never a prediction.
+#
+# 5 and 10 are added to reach a ten-frame horizon (~1/3 s at 30fps). 1, 2 and 3 stay so
+# every number already reported remains directly comparable, and 5 gives the error-vs-
+# horizon curve a point between 3 and 10 instead of a straight line through two.
+#
+# Cost: windows are built per horizon, so this is ~1.7x the dataset and ~1.7x the
+# training time -- about 18 h against the 11 h the [1, 2, 3] run took.
+PRED_STEPS   = [1, 2, 3, 5, 10]
 VAL_FRAC     = 0.20
 SEED         = 42                       # reproducible FPS anchor selection
 # Savitzky-Golay temporal smoothing, applied per-video to the raw trajectory before
@@ -200,7 +212,11 @@ for vi, ws_name in enumerate(workspace_names):
     traj_full = np.load(traj_path)      # (N_F, N_G, 3)
     N_F, N_G, _ = traj_full.shape
     if N_F <= WINDOW_SIZE + max(PRED_STEPS):
-        print(f'  ⚠️  {ws_name}: too few frames ({N_F}) — skip')
+        # Raising max(PRED_STEPS) raises this bar, so a longer horizon can quietly
+        # shrink the dataset by excluding whole videos. Say which number did it.
+        print(f'  ⚠️  {ws_name}: too few frames ({N_F}) — needs more than '
+              f'WINDOW_SIZE + max(PRED_STEPS) = {WINDOW_SIZE} + {max(PRED_STEPS)} = '
+              f'{WINDOW_SIZE + max(PRED_STEPS)} — skip')
         continue
 
     rng = np.random.default_rng(SEED + vi)     # reproducible, independent per video

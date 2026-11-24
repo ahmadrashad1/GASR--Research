@@ -55,7 +55,14 @@ NOISE_AUG       = 0.0003
 #
 # Deliberately larger than max(PRED_STEPS) so widening Module 4's PRED_STEPS later does
 # not change the architecture or invalidate checkpoints.
-MAX_PRED_STEP   = 8
+#
+# That headroom is NOT a trained horizon. The embedding is nn.Embedding(MAX_PRED_STEP+1,
+# D), and a row the data never visits keeps its random initialisation forever. From the
+# first horizon-conditioned run until 2026-11-24 this was 8 while Module 4 emitted only
+# [1, 2, 3], so rows 4-8 were pure noise and a request for k=5 would have returned a
+# confident answer from an untrained embedding. Nothing asked for one, so nothing broke.
+# Whatever this is set to, the horizons that mean anything are Module 4's PRED_STEPS.
+MAX_PRED_STEP   = 10
 
 # TARGET_MODE — what the diffusion model is actually asked to produce.
 #
