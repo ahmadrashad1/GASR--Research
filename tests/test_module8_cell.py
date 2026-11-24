@@ -19,6 +19,7 @@ import builtins
 import json
 import os
 import re
+import sys
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -138,6 +139,97 @@ class TestOneStudyCanRunAlone(unittest.TestCase):
         self.assertRegex(src, r"'note':\s*\(?f?'Run at W=",
                          'C_optimisation carries no note explaining that its absolute '
                          'MPE is not comparable with Study A or Module 7')
+
+
+GENERATED = os.path.join(REPO, 'module8_study_c.py')
+GENERATOR = os.path.join(REPO, 'tools', 'make_study_c_cell.py')
+
+
+class TestTheStudyCCell(unittest.TestCase):
+    """module8_study_c.py: the same cell with Studies A, B and D removed.
+
+    It exists because A and B are finished and their code cannot run, so carrying it
+    is 396 lines nobody can read past. It is GENERATED, because deleting them by hand
+    would fork the data loader and the backbone away from module8_hpo.py.
+    """
+
+    def generated(self):
+        with open(GENERATED, encoding='utf-8') as fh:
+            return fh.read()
+
+    def test_it_is_what_the_generator_produces_now(self):
+        """Regenerating must change nothing. Otherwise module8_hpo.py has moved on and
+        the Study C cell is quietly a copy of an older one."""
+        import subprocess
+        before = self.generated()
+        subprocess.run([sys.executable, GENERATOR], check=True,
+                       capture_output=True, cwd=REPO)
+        self.assertEqual(before, self.generated(),
+                         'module8_study_c.py is stale: re-run '
+                         'tools/make_study_c_cell.py and commit the result')
+
+    def test_it_holds_study_c_and_no_other(self):
+        src = self.generated()
+        self.assertIn('STUDY C — optimisation sensitivity', src)
+        blocks = re.findall(r'^if (RUN_[A-D]):', src, re.M)
+        self.assertEqual(blocks, ['RUN_C'],
+                         f'expected only the Study C block, found {blocks}')
+        # The diffusion model is Study A's and Study D's; nothing left should need it.
+        for gone in ('class ConditionalDenoiser', 'def train_diffusion', 'def ddim('):
+            self.assertNotIn(gone, src, f'{gone} survived but nothing can call it')
+
+    def test_it_still_carries_studies_a_and_b_through(self):
+        """The whole point: run C alone, publish all three."""
+        src = self.generated()
+        self.assertIn('if os.path.exists(RESULTS_PATH)', src,
+                      'the trimmed cell does not reload A and B from Drive')
+        for name, key in (('has_A', 'A_inference'), ('has_B', 'B_context')):
+            self.assertRegex(
+                src, rf"{name}\s*=\s*'{key}'\s+in\s+results",
+                f'{name} was lost in the trim, so a Study C run would publish a '
+                f'figure with that panel blank')
+
+    def test_it_is_self_contained(self):
+        """The trim removes definitions; this is what proves it removed only the ones
+        nothing still calls. A NameError here would surface on Colab hours in."""
+        tree = ast.parse(self.generated())
+        bound = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                bound.add(node.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                bound.add(node.name)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    bound.add((a.asname or a.name).split('.')[0])
+            elif isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    bound.add(a.asname or a.name)
+            elif isinstance(node, ast.arg):
+                bound.add(node.arg)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                bound.add(node.name)
+            elif isinstance(node, ast.Global):
+                bound.update(node.names)
+            elif isinstance(node, (ast.For, ast.comprehension)):
+                for n in ast.walk(node.target):
+                    if isinstance(n, ast.Name):
+                        bound.add(n.id)
+            elif isinstance(node, (ast.With, ast.AsyncWith)):
+                for item in node.items:
+                    if item.optional_vars:
+                        for n in ast.walk(item.optional_vars):
+                            if isinstance(n, ast.Name):
+                                bound.add(n.id)
+        known = bound | set(dir(builtins)) | {'__name__', '__file__'}
+        used = {n.id for n in ast.walk(tree)
+                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+        self.assertEqual(sorted(used - known), [],
+                         'the trim removed something that is still called')
+
+    def test_it_says_it_is_generated(self):
+        self.assertIn('GENERATED FILE', self.generated(),
+                      'nothing warns a reader that editing this file is pointless')
 
 
 if __name__ == '__main__':
