@@ -30,6 +30,15 @@ const ctx = new Proxy({} as Record<string, unknown>, {
 // connection attempt to localhost on every render of App.
 export const fetchCalls: string[] = [];
 
+/**
+ * Return this from a stubFetch handler to answer with a status other than 200.
+ * A refused sign-in is a 401 with a body, and code that only ever sees 200 in test
+ * has not been shown to read `res.ok` at all.
+ */
+export function reply(status: number, body: unknown) {
+  return { __reply: true as const, status, body };
+}
+
 export function stubFetch(handler?: (url: string, init?: RequestInit) => unknown) {
   fetchCalls.length = 0;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -38,6 +47,14 @@ export function stubFetch(handler?: (url: string, init?: RequestInit) => unknown
     if (!handler) throw new TypeError('fetch failed');
     const body = handler(u, init);
     if (body === undefined) throw new TypeError('fetch failed');
+    if (body && typeof body === 'object' && (body as { __reply?: boolean }).__reply) {
+      const r = body as { status: number; body: unknown };
+      return {
+        ok: r.status >= 200 && r.status < 300,
+        status: r.status,
+        json: async () => r.body,
+      } as Response;
+    }
     return {
       ok: true,
       status: 200,

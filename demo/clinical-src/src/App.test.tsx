@@ -131,7 +131,7 @@ test('a payload with no horizons list still renders instead of going blank', () 
 // its absence, and its failure, cost the page nothing.
 import { beforeEach } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { stubFetch } from './test-setup';
+import { reply, stubFetch } from './test-setup';
 
 const LIVE_INFO = {
   live: true, checkpoint_epoch: 100, params: 16318467, window: 32, n_anchor: 512,
@@ -252,4 +252,68 @@ test('a server serving a different video is refused on screen, not used', async 
   a.ok(screen.getByText('MEASURED'));
   a.doesNotMatch(document.body.textContent!, /run the model now/,
                  'live controls must not appear for a mismatched server');
+});
+
+// ── the doctor sign-in gate ──────────────────────────────────────────────────
+// Reachable only when a server answered and asked for one. Double-clicked the page
+// is on file://, makes no request, and none of this can appear.
+
+async function settle(ms = 30) {
+  await new Promise(r => setTimeout(r, ms));
+}
+
+test('a server that wants a sign-in replaces the demonstrator with the gate',
+     async () => {
+  stubFetch(() => ({ ok: true, live: false, auth_required: true, signed_in: false }));
+  render(<App data={real()} placeholder={false} />);
+  await settle();
+  a.ok(screen.getByText(/Sign in to run the model/i));
+  a.equal(screen.queryByText(SCENES[0].title), null,
+          'the scenes rendered behind an unanswered sign-in');
+});
+
+test('the gate says what it does not protect, and offers the way past', async () => {
+  stubFetch(() => ({ ok: true, live: false, auth_required: true, signed_in: false }));
+  render(<App data={real()} placeholder={false} />);
+  await settle();
+  // Without this the screen implies the exported measurement is confidential. It is
+  // on a USB stick and opens by double-click; claiming otherwise would be a lie.
+  a.ok(screen.getByText(/not confidential/i));
+
+  fireEvent.click(screen.getByText(/Continue to the exported demonstrator/i));
+  await settle();
+  a.ok(screen.getByText(SCENES[0].title), 'the way past the gate did not work');
+});
+
+test('no sign-in screen appears when the server does not ask for one', async () => {
+  stubFetch(() => ({ ok: true, live: false, auth_required: false, signed_in: true }));
+  render(<App data={real()} placeholder={false} />);
+  await settle();
+  a.equal(screen.queryByText(/Sign in to run the model/i), null);
+  a.ok(screen.getByText(SCENES[0].title));
+});
+
+test('the gate never appears with no server at all', async () => {
+  stubFetch();                       // every call throws: nothing is listening
+  render(<App data={real()} placeholder={false} />);
+  await settle();
+  a.equal(screen.queryByText(/Sign in to run the model/i), null);
+  a.ok(screen.getByText(SCENES[0].title));
+});
+
+test('a wrong password keeps the gate up and shows the reason', async () => {
+  stubFetch(url => url === '/api/login'
+    ? reply(401, { error: 'that roll number and password do not match' })
+    : { ok: true, live: false, auth_required: true, signed_in: false });
+  render(<App data={real()} placeholder={false} />);
+  await settle();
+  fireEvent.change(screen.getByLabelText(/Roll number/i),
+                   { target: { value: 'doc-1' } });
+  fireEvent.change(screen.getByLabelText(/Password/i),
+                   { target: { value: 'wrong' } });
+  fireEvent.click(screen.getByText(/^Sign in$/));
+  await settle(80);
+  a.ok(screen.getByText(/do not match/i));
+  a.ok(screen.getByText(/Sign in to run the model/i),
+       'a failed sign-in let the page through');
 });

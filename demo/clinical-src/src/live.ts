@@ -35,6 +35,12 @@ export interface LiveInfo {
   n_points?: number;
   horizons?: number[];
   calibration?: Record<string, number>;
+  // Sign-in. The server gates live inference on a doctor's roll number and password;
+  // unauthenticated it reports `live: false` and nothing else about the bundle, so an
+  // unsigned-in page behaves exactly like a page with no server behind it.
+  auth_required?: boolean;
+  signed_in?: boolean;
+  doctor?: string | null;
 }
 
 export interface LiveRow {
@@ -103,12 +109,67 @@ export async function probeLive(
       return (await res.json()) as LiveInfo;
     });
     if (!info || info.ok === false) return null;
+    // A server that wants a sign-in is a real server and the page must say so, even
+    // though it reports live: false until a doctor has signed in. This is the one
+    // negative answer that is not "there is nothing here".
+    if (info.auth_required === true && info.signed_in !== true) return info;
     // A server without a bundle can serve the page but cannot predict. Reporting it as
     // live would light the badge and then fail on the first click.
     return info.live === true ? info : null;
   } catch {
     return null;
   }
+}
+
+/** True when a server is present but no doctor has signed in yet. */
+export function needsSignIn(info: LiveInfo | null): boolean {
+  return !!info && info.auth_required === true && info.signed_in !== true;
+}
+
+/**
+ * Sign a doctor in. Resolves to the server's message on failure and null on success,
+ * so the caller has one thing to check and always has something to show.
+ *
+ * The session is a HttpOnly cookie set by the server; nothing here stores or can read
+ * a token, and the password is never kept after this call.
+ */
+export async function signIn(
+  roll: string,
+  password: string,
+  fetchImpl?: FetchLike,
+  loc?: { protocol?: string },
+): Promise<string | null> {
+  if (!liveReachable(loc)) return 'live mode needs the page served by the local server';
+  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
+  if (!f) return 'this browser cannot reach the local server';
+  try {
+    return await withTimeout(HEALTH_TIMEOUT_MS * 8, async signal => {
+      const res = await f('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roll, password }),
+        signal,
+      });
+      let payload: { error?: string } = {};
+      try { payload = await res.json(); } catch { /* keep the status-based message */ }
+      if (res.ok) return null;
+      return payload.error || 'sign-in failed';
+    });
+  } catch {
+    return 'the local server did not answer the sign-in';
+  }
+}
+
+/** Sign out. Never throws: the worst case is the session outliving the click. */
+export async function signOut(fetchImpl?: FetchLike,
+                              loc?: { protocol?: string }): Promise<void> {
+  if (!liveReachable(loc)) return;
+  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
+  if (!f) return;
+  try {
+    await withTimeout(HEALTH_TIMEOUT_MS * 4,
+                      signal => f('/api/logout', { method: 'POST', signal }));
+  } catch { /* the session expires on its own, and on restart */ }
 }
 
 /**

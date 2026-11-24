@@ -4,8 +4,9 @@ import type { Payload } from './types';
 import { SCENES, STR } from './scenes';
 import { Stage, overlayGain } from './Stage';
 import { Readout } from './Readout';
-import { liveMismatch, liveSkill, mergeLiveRow, predictLive, probeLive,
-         type LiveInfo, type LiveRow } from './live';
+import { SignIn } from './SignIn';
+import { liveMismatch, liveSkill, mergeLiveRow, needsSignIn, predictLive, probeLive,
+         signOut, type LiveInfo, type LiveRow } from './live';
 
 export function App({ data, placeholder }: { data: Payload; placeholder: boolean }) {
   // An older or hand-edited payload can lack horizons entirely. Reading it unguarded
@@ -28,21 +29,45 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
   const [liveOrigin, setLiveOrigin] = useState<number | null>(null);
   const [liveRefused, setLiveRefused] = useState<string | null>(null);
 
+  // Sign-in. `gate` is set only when a server answered and asked for one, which can
+  // never happen on file:// because no request is made there at all.
+  const [gate, setGate] = useState<LiveInfo | null>(null);
+  const [doctor, setDoctor] = useState<string | null>(null);
+  const [past, setPast] = useState(false);
+
   const scene = SCENES[si];
+
+  // One place decides what a health reply means, because sign-in produces a second
+  // reply that has to be read by exactly the same rules as the first.
+  const applyInfo = useCallback((info: LiveInfo | null) => {
+    if (!info) return;
+    if (needsSignIn(info)) { setGate(info); return; }
+    setGate(null);
+    setDoctor(info.doctor ?? null);
+    if (info.live !== true) return;
+    // A server serving a different video, or a different point count, must not be
+    // allowed to draw over this payload. Refuse, and say which.
+    const why = liveMismatch(info, data);
+    if (why) { setLiveRefused(why); return; }
+    setLive(info);
+  }, [data]);
 
   useEffect(() => {
     let on = true;
-    probeLive().then(info => {
-      if (!on) return;
-      if (!info) return;
-      // A server serving a different video, or a different point count, must not be
-      // allowed to draw over this payload. Refuse, and say which.
-      const why = liveMismatch(info, data);
-      if (why) { setLiveRefused(why); return; }
-      setLive(info);
-    });
+    probeLive().then(info => { if (on) applyInfo(info); });
     return () => { on = false; };
-  }, [data]);
+  }, [data, applyInfo]);
+
+  const onSignedIn = useCallback(async () => {
+    // Health said almost nothing while signed out. Ask again now that it will answer.
+    applyInfo(await probeLive());
+  }, [applyInfo]);
+
+  const onSignOut = useCallback(async () => {
+    await signOut();
+    setLive(null); setLiveRow(null); setDoctor(null); setPast(false);
+    applyInfo(await probeLive());
+  }, [applyInfo]);
 
   const exportedOrigin = data.frames[frame]?.t ?? 0;
   const askOrigin = liveOrigin ?? exportedOrigin;
@@ -178,6 +203,24 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
     : liveBusy ? 'border border-[#6E6420] bg-[#3A3A10] text-[#F2E27A]'
     : isLive ? 'bg-[#0E5A3A] text-bone' : 'bg-crimson text-bone';
 
+  // A server asked for a sign-in and nobody has signed in or chosen to go past it.
+  // Unreachable on file://, where no request is ever made.
+  if (gate && !past) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="flex flex-wrap items-baseline gap-4 border-b border-edge
+                           bg-panel px-6 py-3">
+          <h1 className="m-0 text-[19px] font-semibold uppercase tracking-[0.14em]">
+            GASR<span className="text-blood">.</span> predicting tissue motion
+          </h1>
+        </header>
+        <main className="min-h-0 flex-1">
+          <SignIn onSignedIn={onSignedIn} onSkip={() => setPast(true)} />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-baseline gap-4 border-b border-edge
@@ -285,7 +328,12 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
                     onClick={() => void compute(askOrigin + 1)}>origin ▸</button>
           </>
         )}
+        {doctor && (
+          <button className={btn} onClick={() => void onSignOut()}>sign out</button>
+        )}
         <div className="ml-auto text-[13px] text-dim">
+          {doctor && <span className="mr-3">{fill(STR.signedInAs)
+            .replace('{doctor}', doctor)}</span>}
           ← → scene · space play · 1 / 3 horizon · R view
           {live ? ' · L run live · [ ] origin' : ''}
         </div>

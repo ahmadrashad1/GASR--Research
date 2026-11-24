@@ -39,6 +39,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import auth  # noqa: E402
 from engine import DDIM_SAMPLES, DDIM_STEPS, Engine  # noqa: E402
 from gasr_arch import REPO_ROOT  # noqa: E402
 
@@ -193,8 +194,13 @@ class Live:
         return out
 
 
+COOKIE = 'gasr_session'
+
+
 class Handler(SimpleHTTPRequestHandler):
     live = None
+    accounts = None
+    sessions = None
 
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=PAGE_DIR, **kw)
@@ -203,19 +209,89 @@ class Handler(SimpleHTTPRequestHandler):
         if '/api/' in (self.path or ''):
             sys.stderr.write('  %s\n' % (fmt % args))
 
-    def _json(self, obj, code=200):
+    def _json(self, obj, code=200, cookie=None, clear_cookie=False):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        if cookie:
+            # HttpOnly so page scripts cannot read the token; SameSite=Strict so another
+            # site cannot ride the session. No Secure flag: this is http on loopback, and
+            # setting it would stop the cookie being stored at all.
+            self.send_header('Set-Cookie',
+                             f'{COOKIE}={cookie}; HttpOnly; SameSite=Strict; Path=/; '
+                             f'Max-Age={auth.SESSION_HOURS * 3600}')
+        if clear_cookie:
+            self.send_header('Set-Cookie',
+                             f'{COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
         self.end_headers()
         self.wfile.write(body)
+
+    # ── sign-in ──────────────────────────────────────────────────────────────
+    def _token(self):
+        raw = self.headers.get('Cookie') or ''
+        for part in raw.split(';'):
+            name, _, value = part.strip().partition('=')
+            if name == COOKIE:
+                return value
+        return None
+
+    def _signed_in(self):
+        """The roll number of the signed-in doctor, or None.
+
+        With no account store configured the server is open, which is the documented
+        way to run it when a demonstration must not be able to fail on a password.
+        """
+        if self.accounts is None:
+            return '(no sign-in required)'
+        return self.sessions.get(self._token())
+
+    def _body(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        return json.loads(self.rfile.read(n) or b'{}')
+
+    def _login(self):
+        try:
+            req = self._body()
+            roll = str(req.get('roll', ''))
+            password = str(req.get('password', ''))
+        except Exception as exc:
+            return self._json({'error': f'bad request: {exc}'}, 400)
+        if self.accounts is None:
+            return self._json({'ok': True, 'roll': None,
+                               'note': 'this server was started with --no-auth'})
+        ok, why = self.accounts.check(roll, password)
+        if not ok:
+            sys.stderr.write(f'  sign-in refused for {roll!r}: {why}\n')
+            return self._json({'error': why}, 401)
+        token = self.sessions.new(roll)
+        sys.stderr.write(f'  signed in: {roll}\n')
+        return self._json({'ok': True, 'roll': roll,
+                           'name': self.accounts.name_of(roll)}, cookie=token)
 
     def do_GET(self):
         path = self.path.split('?')[0]
         if path == '/api/health':
-            return self._json(self.live.health())
+            who = self._signed_in()
+            # Unauthenticated, health says only that a server is here and wants a
+            # sign-in. The bundle metadata -- which video, which frames are held out,
+            # the checkpoint's epoch -- is behind the gate with everything else.
+            if who is None:
+                return self._json({'ok': True, 'live': False, 'auth_required': True,
+                                   'signed_in': False})
+            out = dict(self.live.health())
+            out['auth_required'] = self.accounts is not None
+            out['signed_in'] = True
+            if self.accounts is not None:
+                out['doctor'] = self.accounts.name_of(who)
+            return self._json(out)
+        if path == '/api/session':
+            who = self._signed_in()
+            return self._json({'signed_in': who is not None,
+                               'auth_required': self.accounts is not None,
+                               'doctor': (self.accounts.name_of(who)
+                                          if who and self.accounts else None)})
         # Chrome asks every origin for a favicon. There isn't one, and the 404 it gets
         # is the only error in the console on an otherwise clean run -- which is worth
         # a line of code to remove, because a panel member who opens the developer
@@ -228,8 +304,18 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        if self.path.split('?')[0] != '/api/predict':
+        path = self.path.split('?')[0]
+        if path == '/api/login':
+            return self._login()
+        if path == '/api/logout':
+            self.sessions.drop(self._token())
+            return self._json({'ok': True}, clear_cookie=True)
+        if path != '/api/predict':
             return self._json({'error': 'no such endpoint'}, 404)
+        # The gate. Running the model against a patient video's geometry is the one
+        # thing this process offers that is not already on the USB stick.
+        if self._signed_in() is None:
+            return self._json({'error': 'sign in to run the model'}, 401)
         if not self.live.e.ready:
             return self._json({'error': 'no live bundle loaded; see '
                                         'serve/export_live_bundle.py'}, 503)
@@ -260,7 +346,42 @@ def main(argv=None):
     ap.add_argument('--warm', action='store_true',
                     help='run one prediction at startup so the first click is not the '
                          'one that pays for lazily allocated kernels')
+    ap.add_argument('--accounts', default=None,
+                    help='doctor account file (default serve/doctors.json, created '
+                         'with one seeded account on first run)')
+    ap.add_argument('--no-auth', action='store_true',
+                    help='serve live inference without a sign-in. The escape hatch for '
+                         'a demonstration that must not be able to fail on a password')
+    ap.add_argument('--add-doctor', metavar='ROLL',
+                    help='create a doctor account, print a generated password, exit')
+    ap.add_argument('--reset-password', metavar='ROLL',
+                    help='set a new generated password for a doctor, print it, exit')
+    ap.add_argument('--list-doctors', action='store_true',
+                    help='print the roll numbers that can sign in, and exit')
     args = ap.parse_args(argv)
+
+    # Account administration runs without loading 261 MB of weights.
+    if args.add_doctor or args.reset_password or args.list_doctors:
+        acc = auth.Accounts(args.accounts or auth.DEFAULT_STORE)
+        if args.list_doctors:
+            if not acc.rolls():
+                print('  no accounts yet')
+            for roll in acc.rolls():
+                print(f'  {roll}    {acc.name_of(roll)}')
+            return 0
+        if args.add_doctor:
+            pw = acc.add(args.add_doctor)
+            print(f'\n  added {args.add_doctor}\n  password: {pw}\n')
+            print('  Stored hashed. This is the only time it is shown.\n')
+            return 0
+        try:
+            pw = acc.set_password(args.reset_password)
+        except KeyError:
+            print(f'  no such doctor: {args.reset_password}')
+            print(f'  known: {", ".join(acc.rolls()) or "(none)"}')
+            return 1
+        print(f'\n  new password for {args.reset_password}: {pw}\n')
+        return 0
 
     kw = {}
     if args.ckpt:
@@ -285,6 +406,29 @@ def main(argv=None):
         print('  Run serve/export_live_bundle.py in Colab to produce serve/live_bundle.npz')
 
     Handler.live = live
+    if args.no_auth:
+        Handler.accounts = None
+        print('\n  --no-auth: live inference is open to anyone who can reach this port.')
+        print('  Fine on loopback for a rehearsal; not how it is meant to run.')
+    else:
+        accounts = auth.Accounts(args.accounts or auth.DEFAULT_STORE)
+        Handler.accounts = accounts
+        Handler.sessions = auth.Sessions()
+        print(f'\n  sign-in required to run the model '
+              f'({len(accounts.rolls())} doctor account(s))')
+        if accounts.seeded:
+            roll, pw = accounts.seeded
+            print(f'\n  Created {accounts.path} with one account:')
+            print(f'      roll number : {roll}')
+            print(f'      password    : {pw}')
+            print('\n  Shown once. Stored hashed. Change it with:')
+            print(f'      python3 serve/server.py --reset-password {roll}')
+        else:
+            print(f'  accounts: {", ".join(accounts.rolls())}')
+            print('  Forgotten it? python3 serve/server.py --reset-password <roll>')
+        print('  The exported page and its measurements are NOT behind this; only '
+              'live\n  inference is. Double-clicking the page still needs nothing.')
+
     try:
         srv = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     except OSError as exc:

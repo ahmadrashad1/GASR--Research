@@ -59,3 +59,8 @@ serve/__pycache__/
 
 # The trained checkpoint: 261 MB, and GitHub refuses files over 100 MB anyway.
 diffusion_ckpt_best.pth
+
+# Doctor accounts: roll numbers and password hashes. A committed credential is a
+# leaked credential, and a committed hash is one somebody can grind offline.
+serve/doctors.json
+serve/doctors.json.tmp

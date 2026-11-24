@@ -1,8 +1,9 @@
 import { test, beforeEach } from 'vitest';
 import a from 'node:assert/strict';
-import { liveMismatch, liveReachable, mergeLiveRow, predictLive, probeLive,
-         liveSkill, type LiveRow, type LiveInfo } from './live';
-import { fetchCalls, stubFetch } from './test-setup';
+import { liveMismatch, liveReachable, mergeLiveRow, needsSignIn, predictLive,
+         probeLive, signIn, signOut, liveSkill,
+         type LiveRow, type LiveInfo } from './live';
+import { fetchCalls, reply, stubFetch } from './test-setup';
 import { synth } from './synth';
 import type { Payload } from './core';
 
@@ -173,4 +174,72 @@ test('a matching server is accepted', () => {
 test('a server that reports neither is not refused on a guess', () => {
   const d = synth() as Payload; d.video = '3'; d.n_points = 256;
   a.equal(liveMismatch({ ...INFO, video: undefined, n_points: undefined }, d), null);
+});
+
+// ── doctor sign-in ───────────────────────────────────────────────────────────
+// The server gates live inference. These check the client half: that the file://
+// guarantee still holds for the two new endpoints, that a refusal is surfaced rather
+// than swallowed, and that no password check happens here.
+
+test('signing in is not attempted from the file:// origin', async () => {
+  const why = await signIn('doc-1', 'secret', undefined, { protocol: 'file:' });
+  a.equal(typeof why, 'string', 'file:// should refuse locally, not silently succeed');
+  a.deepEqual(fetchCalls, [], 'the page called fetch while on file://');
+});
+
+test('signing out is not attempted from the file:// origin', async () => {
+  await signOut(undefined, { protocol: 'file:' });
+  a.deepEqual(fetchCalls, [], 'the page called fetch while on file://');
+});
+
+test('a server asking for a sign-in is reported, not treated as absent', async () => {
+  // It answers live:false until someone signs in. Returning null here, as for a
+  // server with no bundle, would leave the page with no way to offer the sign-in.
+  stubFetch(() => ({ ok: true, live: false, auth_required: true, signed_in: false }));
+  const info = await probeLive(undefined, { protocol: 'http:' });
+  a.ok(info, 'a server that wants a sign-in was reported as no server at all');
+  a.equal(needsSignIn(info), true);
+});
+
+test('needsSignIn is false once signed in, and for no server', async () => {
+  a.equal(needsSignIn(null), false);
+  a.equal(needsSignIn({ ...INFO, auth_required: true, signed_in: true }), false);
+  a.equal(needsSignIn({ ...INFO, auth_required: false }), false);
+});
+
+test('a correct sign-in resolves to null and posts to /api/login', async () => {
+  let seen: { url: string; body: unknown } | null = null;
+  stubFetch((url, init) => {
+    seen = { url, body: JSON.parse(String(init?.body ?? '{}')) };
+    return { ok: true, roll: 'doc-1' };
+  });
+  const why = await signIn('doc-1', 'secret', undefined, { protocol: 'http:' });
+  a.equal(why, null);
+  a.equal(seen!.url, '/api/login');
+  a.deepEqual(seen!.body, { roll: 'doc-1', password: 'secret' });
+});
+
+test("a refused sign-in surfaces the server's own reason", async () => {
+  stubFetch(() => reply(401, { error: 'that roll number and password do not match' }));
+  const why = await signIn('doc-1', 'wrong', undefined, { protocol: 'http:' });
+  a.equal(why, 'that roll number and password do not match');
+});
+
+test('a lockout message reaches the doctor unchanged', async () => {
+  stubFetch(() => reply(401, { error: 'too many failed attempts; try again in 47 s' }));
+  const why = await signIn('doc-1', 'wrong', undefined, { protocol: 'http:' });
+  a.match(String(why), /try again in 47 s/);
+});
+
+test('a dead server during sign-in gives a message, not an exception', async () => {
+  stubFetch();                       // every call throws
+  const why = await signIn('doc-1', 'secret', undefined, { protocol: 'http:' });
+  a.equal(typeof why, 'string');
+  a.match(String(why), /did not answer/);
+});
+
+test('signing out survives a server that has already gone', async () => {
+  stubFetch();
+  await signOut(undefined, { protocol: 'http:' });   // must not throw
+  a.deepEqual(fetchCalls, ['/api/logout']);
 });

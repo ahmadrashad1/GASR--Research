@@ -35,6 +35,46 @@ exists so that nothing has to work on the day except Python and a browser.
 It binds `127.0.0.1` only. This process holds a research checkpoint and a patient
 video's tracked geometry and has no business on a university network.
 
+## Doctor sign-in
+
+Live inference is behind a sign-in. On first start the server creates
+`serve/doctors.json` with one account and prints its roll number and a generated
+password **once**:
+
+```
+  Created serve/doctors.json with one account:
+      roll number : demo-doctor
+      password    : xxxx-xxxx-xxxx
+```
+
+```bash
+python3 serve/server.py --list-doctors            # who can sign in
+python3 serve/server.py --add-doctor 22i-1175     # new account, prints a password
+python3 serve/server.py --reset-password demo-doctor
+python3 serve/server.py --no-auth                 # no sign-in at all
+```
+
+Passwords are stored as PBKDF2-HMAC-SHA256 at 600,000 iterations with a per-account
+random salt, compared with `hmac.compare_digest`, and the file is written `0600` and
+gitignored — a committed hash is a hash somebody can grind offline at their leisure.
+Five wrong answers lock an account for a minute. An unknown roll number is refused in
+the same words, and at the same cost, as a wrong password, so the refusal cannot be
+used to discover who exists. Sessions are random 32-byte tokens in memory, in an
+`HttpOnly; SameSite=Strict` cookie, and they do not survive a restart.
+
+**What it protects, and what it does not.** It gates `/api/predict` and the bundle
+metadata in `/api/health`: without a session the server will not run the model, and
+will not say which video it holds or where the held-out frames begin. It does **not**
+protect the exported demonstrator. `index.html` and `demo_data.js` are the same bytes
+that go on the USB stick and open by double-click with no server and no password, so
+a gate in front of them here would protect nothing and imply a confidentiality this
+project has never claimed. The sign-in screen says exactly that, and offers
+**Continue to the exported demonstrator** — which is also why a forgotten password
+cannot stop a demonstration.
+
+Double-clicked, the page is on `file://`, makes no request at all, and never sees any
+of this. The sign-in screen is unreachable there by construction.
+
 ## Why it is fast enough to be worth having
 
 `ConditionalDenoiser.forward` recomputes `encode_context(ctx)` on every call, and
@@ -101,19 +141,26 @@ paper. If that ever fails, the checkpoint is not the one the report describes.
 |---|---|
 | `gasr_arch.py` | extracts the network from the training script |
 | `engine.py` | checkpoint, schedule, the context-cached sampler, `predict_direct`'s arithmetic |
-| `server.py` | stdlib HTTP: serves the page, `/api/health`, `/api/predict` |
+| `server.py` | stdlib HTTP: serves the page, `/api/health`, `/api/predict`, sign-in |
+| `auth.py` | doctor accounts, password hashing, sessions, lockout |
 | `export_live_bundle.py` | the Colab cell that produces `live_bundle.npz` |
 
 ## Tests
 
 ```bash
 python3 -m unittest tests.test_serve_engine -v              # 18 tests, ~80 s
+python3 -m unittest tests.test_serve_auth -v                # 27 tests, ~11 s
 GASR_SLOW=1 python3 -m unittest tests.test_serve_engine -v  # adds the equivalence proofs
 ```
 
 The slow three run the unmodified sampler; the whole suite then takes about 19 minutes. They are the only
 tests here that matter: they are what stands between "the live demo agrees with the
 paper" and a claim nobody checked. Run them before the viva.
+
+`test_serve_auth` runs the real HTTP handler against a stub engine, so it needs
+neither the checkpoint nor the bundle. What it pins is the negative: that a caller
+who has not signed in cannot get a prediction, cannot learn which video the bundle
+holds, and cannot tell a wrong password from an unknown roll number.
 
 The client half is tested in `demo/clinical-src` (`npm test`), including the one
 guarantee this whole design rests on: that on the `file://` origin the page makes **no

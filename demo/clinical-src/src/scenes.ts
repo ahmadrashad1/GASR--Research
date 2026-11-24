@@ -187,6 +187,26 @@ export const STR: Record<string, string> = {
     'the model, and predicting one of those would flatter it for the one reason that ' +
     'proves nothing, so the server refuses them.',
 
+  // ── Doctor sign-in ────────────────────────────────────────────────────────
+  // Only reachable when a local server asked for a sign-in. Double-clicked, the page
+  // makes no request, so none of these strings can appear.
+  signInEyebrow: 'Local inference server',
+  signInTitle: 'Sign in to run the model',
+  signInBody:
+    'Running the model on this machine works on a patient video’s tracked geometry, ' +
+    'using the trained checkpoint. The server asks for a doctor’s roll number and ' +
+    'password before it will do that.',
+
+  signInScope:
+    'This covers live inference only. The measurements already on this page were ' +
+    'exported beforehand and are not confidential — the same page opens from a USB ' +
+    'stick with no server and no password. Saying otherwise would claim a protection ' +
+    'that is not there.',
+
+  signInSkip: 'Continue to the exported demonstrator',
+
+  signedInAs: 'Signed in as {doctor}',
+
   missingPrefix: 'This export has no ',
   missingSuffix: ' at {horizon}.',
   GAP_GT: 'recorded outcome',
