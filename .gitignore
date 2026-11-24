@@ -64,3 +64,8 @@ diffusion_ckpt_best.pth
 # leaked credential, and a committed hash is one somebody can grind offline.
 serve/doctors.json
 serve/doctors.json.tmp
+
+# Video rendered from the endoscopic stills. Same rule as demo/clinical/frames/:
+# a video of a patient every bit as much as the frames it was made from.
+demo/*.mp4
+demo/predicted_future*.mp4
