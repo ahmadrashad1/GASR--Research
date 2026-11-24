@@ -2,10 +2,14 @@
 % References for: Predicting Future Tissue Geometry from Monocular
 %                 Laparoscopic Video
 %
-% VERIFY BEFORE SUBMISSION. arXiv identifiers and author lists below were taken
-% from the papers' listing pages, but page numbers and some published venues
-% should be confirmed against the official proceedings. Entries marked
-% NEEDS-CHECK have a detail the author could not confirm.
+% arXiv identifiers and author lists were taken from the papers' listing pages.
+% The three entries that carried a NEEDS-CHECK were resolved on 24 November 2026
+% against the arXiv abstract pages and the TUM library record: MoNet's published
+% venue, and the author lists of the two concurrent works.
+%
+% STILL WORTH A LOOK BEFORE SUBMISSION: page numbers on the conference entries,
+% and whether either 2026 preprint has since been accepted somewhere. Both were
+% unpublished on 24 November 2026; one is under review at ICRA 2027.
 % ============================================================================
 
 % ---------- Reconstruction: radiance fields and Gaussian splatting ----------
@@ -56,12 +60,17 @@
   year    = {2019}
 }
 
+% Cited as the journal version, not the 2020 preprint: the two have different author
+% lists (the preprint has Tianpei Zou in place of Lijun Zhang and Alois Knoll).
 @article{lu2021monet,
-  title   = {{M}o{N}et: Motion-based Point Cloud Prediction Network},
+  title   = {{M}o{N}et: Motion-Based Point Cloud Prediction Network},
   author  = {Lu, Fan and Chen, Guang and Li, Zhijun and Zhang, Lijun and Liu, Yinlong and Qu, Sanqing and Knoll, Alois},
-  journal = {arXiv preprint arXiv:2011.10812},
-  year    = {2021},
-  note    = {NEEDS-CHECK: published venue (IEEE T-ITS)}
+  journal = {IEEE Transactions on Intelligent Transportation Systems},
+  volume  = {23},
+  number  = {8},
+  pages   = {13794--13804},
+  year    = {2022},
+  doi     = {10.1109/TITS.2021.3128424}
 }
 
 @article{luo2023pcpnet,
@@ -187,25 +196,29 @@
 % ---------- Concurrent work (found 2026-10-20; VERIFY before submission) ----------
 % These two appeared after the first draft and both bear directly on the novelty claim.
 @article{surggmf2026,
-  title   = {{S}urg{GMF}: Fully Causal Gaussian Motion Forecasting for Anticipatory
+  title   = {{S}urg{GMF}: Fully Causal {G}aussian Motion Forecasting for Anticipatory
              Surgical Scene Rendering},
-  author  = {{Anonymous}},
+  author  = {Sun, Jingqian and Tang, Yichao},
   journal = {arXiv preprint arXiv:2609.34733},
   year    = {2026},
-  note    = {NEEDS-CHECK: author list and venue. Forecasts future Gaussian motion states
-             (position, scale, rotation residuals), 5 steps from a 10-step history, on
-             EndoNeRF and StereoMIS. No uncertainty output; evaluated on render quality
-             rather than geometry. Directly contests a "first to forecast surgical
-             geometry" claim.}
+  doi     = {10.48550/arXiv.2609.34733},
+  note    = {Preprint, submitted 28 September 2026; no venue as of 24 November 2026.
+             Forecasts future Gaussian motion states (position, scale, rotation
+             residuals), 5 steps from a 10-step history, on EndoNeRF and StereoMIS.
+             No uncertainty output; evaluated on render quality rather than geometry.
+             Directly contests a ``first to forecast surgical geometry'' claim.}
 }
 
 @article{obsref2026,
   title   = {Observation-Referenced Tissue Deformation Forecasting with Tool-Driven and
              Residual Dynamics},
-  author  = {{Anonymous}},
+  author  = {Olesch, Tom and Xiao, Nan and Xiao, Xiongye and DeLong, Jonathan C.
+             and Liu, Fei},
   journal = {arXiv preprint arXiv:2610.14191},
   year    = {2026},
-  note    = {NEEDS-CHECK: author list and venue. Requires the preplanned future tool
+  doi     = {10.48550/arXiv.2610.14191},
+  note    = {Preprint, submitted 9 October 2026; submitted to ICRA 2027 and not
+             accepted as of 24 November 2026. Requires the preplanned future tool
              trajectory as input, so it remains action-conditioned; our no-annotation
              distinction survives against it.}
 }
