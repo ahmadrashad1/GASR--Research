@@ -328,14 +328,29 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
                     onClick={() => void compute(askOrigin + 1)}>origin ▸</button>
           </>
         )}
-        {doctor && (
-          <button className={btn} onClick={() => void onSignOut()}>sign out</button>
-        )}
+        {/* Sign-out lives in the status line, not the button row. As a tenth button it
+            pushed the row onto two lines at 1280x720 and 1600x1000 -- measured, 88px
+            of footer instead of 66 -- and the stage lost the difference. It also
+            belongs next to the name it signs out. */}
         <div className="ml-auto text-[13px] text-dim">
-          {doctor && <span className="mr-3">{fill(STR.signedInAs)
-            .replace('{doctor}', doctor)}</span>}
-          ← → scene · space play · 1 / 3 horizon · R view
-          {live ? ' · L run live · [ ] origin' : ''}
+          {doctor && (
+            <span className="mr-3">
+              {fill(STR.signedInAs).replace('{doctor}', doctor)}
+              {' · '}
+              <button onClick={() => void onSignOut()}
+                      className="underline underline-offset-2 hover:text-bone">
+                sign out
+              </button>
+            </span>
+          )}
+          {/* The keyboard hints are the first thing to give at narrow widths: every
+              one of them duplicates a button that is still on screen, and below
+              1536px keeping them wrapped the control row onto a second line, which
+              cost the stage 22px. Who is signed in stays visible at every width. */}
+          <span className="hidden 2xl:inline">
+            ← → scene · space play · 1 / 3 horizon · R view
+            {live ? ' · L run live · [ ] origin' : ''}
+          </span>
         </div>
       </footer>
     </div>
