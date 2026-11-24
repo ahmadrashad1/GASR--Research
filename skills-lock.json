@@ -1,6 +1,13 @@
 {
   "version": 2,
   "skills": {
+    "academic-pptx": {
+      "source": "Gabberflast/academic-pptx-skill",
+      "commit": "9f2b703ffe8d1449851617665ab1ffb3516d54ac",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "cc7a2e2b1ed1e67357dd63c863f123b5c1c7eec5ab2c6098ee98aa8526bcfa79"
+    },
     "webapp-testing": {
       "source": "anthropics/skills",
       "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
