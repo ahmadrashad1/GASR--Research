@@ -206,8 +206,10 @@ slide('papers', head('Progress 3 / 3 · the base papers', 'What we build on, and
 # 7 · remaining work
 # ════════════════════════════════════════════════════════════════════
 slide('future', head('What is left', 'Remaining work until the final evaluation') + steps([
-    ('Run the 11-method comparison and the HPO studies',
-     'Both written and tested. What remains is compute, not code.'),
+    ('Re-run Module 6 against the epoch-100 checkpoint',
+     'Module 7 is done; the direction and uncertainty figures are still from epoch 60.'),
+    ('Finish the HPO studies \u2014 C is queued, D is opt-in',
+     'A and B are measured. C is 2.9 h of compute, not code.'),
     ('Evaluate the two corrections already implemented',
      'Calibration needs no retraining; the residual target needs one retrain.'),
     ('Move to leave-one-video-out evaluation', ''),
@@ -284,24 +286,29 @@ error. Some of it may reflect that busy moments are both harder and more variabl
 # ════════════════════════════════════════════════════════════════════
 # 12 · the comparison
 # ════════════════════════════════════════════════════════════════════
-slide('cmp', head('Reported honestly', 'A two-line formula beats our model') + """
-<div class="cmp-top r" style="--d:.2s"><div>
-<table class="tbl"><thead><tr><th>Method</th><th>k = 1</th><th>k = 2</th><th>k = 3</th></tr></thead>
+slide('cmp', head('Reported honestly', 'First of eleven methods \u2014 and still beaten at one frame') + """
+<div class="r" style="--d:.2s">
+<table class="tbl cmp11"><thead><tr><th>Method</th><th>Params</th><th>MPE</th><th>k = 1</th><th>k = 2</th><th>k = 3</th><th>vs naive</th></tr></thead>
 <tbody>
-<tr><td>Nothing moves <span class="mz">(naive)</span></td><td>0.0093</td><td>0.0165</td><td>0.0222</td></tr>
-<tr><td class="cv">Constant velocity</td><td class="cv">0.0055</td><td class="cv">0.0138</td><td class="cv">0.0187</td></tr>
-<tr><td class="ours">Ours — diffusion</td><td class="ours">0.0093</td><td class="ours">0.0165</td><td class="ours">0.0225</td></tr>
+<tr><td class="ours">Ours — diffusion</td><td class="ours">16.3 M</td><td class="ours"><b>0.007461</b></td><td class="ours">0.003108</td><td class="ours">0.007327</td><td class="ours">0.011960</td><td class="ours">+20.6%</td></tr>
+<tr><td>MLP regressor</td><td>157 k</td><td><b>0.008053</b></td><td>0.004113</td><td>0.008093</td><td>0.011962</td><td>+14.3%</td></tr>
+<tr><td>LSTM (per-point)</td><td>860 k</td><td><b>0.008056</b></td><td>0.004228</td><td>0.007975</td><td>0.011974</td><td>+14.3%</td></tr>
+<tr><td>GRU (per-point)</td><td>662 k</td><td><b>0.008087</b></td><td>0.004214</td><td>0.007955</td><td>0.012103</td><td>+13.9%</td></tr>
+<tr><td class="cv">Constant velocity</td><td class="cv">—</td><td class="cv"><b>0.008211</b></td><td class="cv">0.002996</td><td class="cv">0.007838</td><td class="cv">0.013811</td><td class="cv">+12.6%</td></tr>
+<tr><td>PointLSTM <span class="mz">(base paper)</span></td><td>336 k</td><td><b>0.008392</b></td><td>0.004553</td><td>0.008327</td><td>0.012303</td><td>+10.7%</td></tr>
+<tr><td>Transformer (determ.)</td><td>1.66 M</td><td><b>0.009290</b></td><td>0.005291</td><td>0.009318</td><td>0.013269</td><td>+1.1%</td></tr>
+<tr><td>Nothing moves <span class="mz">(naive)</span></td><td>—</td><td><b>0.009395</b></td><td>0.005035</td><td>0.009576</td><td>0.013583</td><td>0.0%</td></tr>
+<tr><td>Constant acceleration</td><td>—</td><td><b>0.010939</b></td><td>0.003144</td><td>0.009824</td><td>0.019869</td><td>−16.4%</td></tr>
+<tr><td>Kalman filter (CV model)</td><td>—</td><td><b>0.015489</b></td><td>0.011022</td><td>0.015449</td><td>0.020005</td><td>−64.9%</td></tr>
+<tr><td>Linear fit over window</td><td>—</td><td><b>0.022323</b></td><td>0.019657</td><td>0.022359</td><td>0.024958</td><td>−137.6%</td></tr>
 </tbody></table>
-<p class="tnote">Chamfer Distance, lower is better · full held-out set, 10 videos</p>
-</div>
-<p class="aside">We lose on all ten videos, so it is not a fluke we can explain away. Before
-concluding anything, we tested and eliminated the two obvious alternatives — and the
-diagnostics below are how.</p>
-</div>""" + fig('timeline8_dark.png', 'wide',
-                'no drift (ρ = +0.02, p = 0.61)  ·  no dropped frames (333 origins checked, '
-                '0 found)  ·  excess error is not concentrated in bursts'),
-      'Do not soften this. Eliminating two explanations by measurement is what let us find the '
-      'cause.')
+<p class="tnote">Mean Point Error, lower is better \u00b7 1,298 held-out windows across 10 videos \u00b7 every learned baseline trained 60 epochs under one protocol \u00b7 our model loaded from Module 5, not retrained</p>
+</div>"""
+      + '<div class="note-bar r" style="--d:.4s">Best overall, and 11.1% better '
+        'than the base paper. But constant velocity still wins at <em>k = 1</em>, '
+        'and at <em>k = 3</em> a 157 k MLP matches us to 0.017% with 104\u00d7 '
+        'fewer parameters.</div>',
+      'Lead with the win, then name both places it is not a win.')
 
 # ════════════════════════════════════════════════════════════════════
 CSS = r"""
@@ -388,7 +395,10 @@ h1 em{font-style:normal;color:var(--blood)}
 .split-img{display:grid;grid-template-columns:1fr 1fr;gap:46px;margin-top:0;align-items:start}
 .split-img.wide-l{grid-template-columns:1.1fr 1fr}
 .cmp-top{display:grid;grid-template-columns:1.15fr 1fr;gap:56px;align-items:start;margin-bottom:26px}
-.slide.cmp .tbl td{padding:11px 16px} .slide.cmp .tnote{margin-bottom:0}
+.slide.cmp .tbl td{padding:11px 16px}
+.tbl.cmp11{font-size:17px} .slide.cmp .tbl.cmp11 td{padding:7px 14px}
+.tbl.cmp11 th{padding:8px 14px} .tbl.cmp11 td:not(:first-child){text-align:right}
+.tbl.cmp11 th:not(:first-child){text-align:right} .slide.cmp .tnote{margin-bottom:0}
 
 .stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .stats-col{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:24px}
