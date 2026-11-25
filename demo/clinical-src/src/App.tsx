@@ -191,27 +191,27 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
     return ` ${STR.missingPrefix}${list}${fill(STR.missingSuffix)}`;
   }, [shown, frame, k, scene, fill]);
 
-  const btn = 'rounded border border-edge bg-[#1E1E24] px-4 py-2 text-[15px] ' +
-              'hover:border-blood cursor-pointer';
-  const on = 'border-blood bg-crimson';
+  const btn = 'rounded border border-rule bg-swab px-4 py-2 text-[15px] text-ink ' +
+              'hover:border-signal cursor-pointer';
+  const on = 'border-signal bg-oxblood text-drape';
 
   const badge = placeholder ? 'PLACEHOLDER DATA'
               : liveBusy ? 'COMPUTING…'
               : isLive ? 'LIVE' : 'MEASURED';
   const badgeStyle = placeholder
-    ? 'border border-[#6E6420] bg-[#3A3A10] text-[#F2E27A]'
-    : liveBusy ? 'border border-[#6E6420] bg-[#3A3A10] text-[#F2E27A]'
-    : isLive ? 'bg-[#0E5A3A] text-bone' : 'bg-crimson text-bone';
+    ? 'border border-[#C9A227] bg-[#FBF3DC] text-[#6B4E00]'
+    : liveBusy ? 'border border-[#C9A227] bg-[#FBF3DC] text-[#6B4E00]'
+    : isLive ? 'bg-[#0E5A3A] text-drape' : 'bg-oxblood text-drape';
 
   // A server asked for a sign-in and nobody has signed in or chosen to go past it.
   // Unreachable on file://, where no request is ever made.
   if (gate && !past) {
     return (
       <div className="flex h-full flex-col">
-        <header className="flex flex-wrap items-baseline gap-4 border-b border-edge
-                           bg-panel px-6 py-3">
-          <h1 className="m-0 text-[19px] font-semibold uppercase tracking-[0.14em]">
-            GASR<span className="text-blood">.</span> predicting tissue motion
+        <header className="flex flex-wrap items-baseline gap-4 border-b border-rule
+                           bg-swab px-6 py-3">
+          <h1 className="m-0 font-display text-[21px] font-bold tracking-[0.01em]">
+            GASR<span className="text-signal">.</span> predicting tissue motion
           </h1>
         </header>
         <main className="min-h-0 flex-1">
@@ -223,12 +223,12 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-baseline gap-4 border-b border-edge
-                         bg-panel px-6 py-3">
-        <h1 className="m-0 text-[19px] font-semibold uppercase tracking-[0.14em]">
-          GASR<span className="text-blood">.</span> predicting tissue motion
+      <header className="flex flex-wrap items-baseline gap-4 border-b border-rule
+                         bg-swab px-6 py-3">
+        <h1 className="m-0 font-display text-[21px] font-bold tracking-[0.01em]">
+          GASR<span className="text-signal">.</span> predicting tissue motion
         </h1>
-        <div className="text-sm text-dim">
+        <div className="text-sm text-serosa">
           {placeholder ? STR.metaPlaceholder
             : `${data.video} · ${data.n_points} points · ${data.n_frames} held-out ` +
               `moments · checkpoint epoch ${data.checkpoint_epoch}` +
@@ -252,16 +252,21 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
         {/* `narration` is the hook for the short-viewport rules in index.css. This
             column holds more than a 720p projector has room for, so below 900px of
             height it tightens rather than silently scrolling four of seven scenes. */}
-        <section className="narration overflow-y-auto border-r border-edge px-7 py-6">
-          <div className="text-sm font-bold tracking-[0.17em] text-blood">
-            SCENE {si + 1} OF {SCENES.length}
+        <section className="narration overflow-y-auto border-r border-rule px-7 py-6">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="rail" role="presentation">
+              {SCENES.map((_, i) => <i key={i} data-on={i <= si ? '1' : '0'} />)}
+            </div>
+            <span className="text-sm text-serosa">
+              Scene {si + 1} of {SCENES.length}
+            </span>
           </div>
-          <h2 className="mb-4 mt-2 text-[33px] font-bold leading-tight">{scene.title}</h2>
-          <p className="mb-5 text-lg text-[#D8D8DE]">{fill(scene.body)}{missing}</p>
+          <h2 className="mb-4 mt-2 font-display text-[33px] font-bold leading-[1.15] text-ink">{scene.title}</h2>
+          <p className="mb-5 text-lg text-ink">{fill(scene.body)}{missing}</p>
 
           {notes.map((n, i) => (
-            <div key={i} className="caveat mb-4 border-l-[3px] border-blood bg-blood/10
-                                    px-4 py-3 text-base text-[#F0CFCF]">{n}</div>
+            <div key={i} className="caveat mb-4 border-l-[3px] border-signal bg-signal/8
+                                    px-4 py-3 text-base text-oxblood">{n}</div>
           ))}
 
           {/* Ordered after the caveats here and before them on a short viewport -- see
@@ -284,8 +289,8 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
             )}
 
             {liveRefused && !placeholder && (
-              <div className="mt-6 border-l-[3px] border-blood bg-blood/10 px-4 py-3
-                              text-base text-[#F0CFCF]">
+              <div className="mt-6 border-l-[3px] border-signal bg-signal/8 px-4 py-3
+                              text-base text-oxblood">
                 Live inference is available but was refused: {liveRefused}. The exported
                 measurement on this page is unaffected.
               </div>
@@ -306,7 +311,7 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
         />
       </main>
 
-      <footer className="flex items-center gap-2 border-t border-edge bg-panel px-6 py-3">
+      <footer className="flex items-center gap-2 border-t border-rule bg-swab px-6 py-3">
         <button className={btn} onClick={() => go(si - 1)}>← back</button>
         <button className={btn} onClick={() => go(si + 1)}>next →</button>
         <button className={btn} onClick={() => setPlaying(p => !p)}>
@@ -332,13 +337,13 @@ export function App({ data, placeholder }: { data: Payload; placeholder: boolean
             pushed the row onto two lines at 1280x720 and 1600x1000 -- measured, 88px
             of footer instead of 66 -- and the stage lost the difference. It also
             belongs next to the name it signs out. */}
-        <div className="ml-auto text-[13px] text-dim">
+        <div className="ml-auto text-[13px] text-serosa">
           {doctor && (
             <span className="mr-3">
               {fill(STR.signedInAs).replace('{doctor}', doctor)}
               {' · '}
               <button onClick={() => void onSignOut()}
-                      className="underline underline-offset-2 hover:text-bone">
+                      className="underline underline-offset-2 hover:text-ink">
                 sign out
               </button>
             </span>
@@ -370,33 +375,33 @@ function LivePanel({ info, row, busy, error, origin, fill }:
     x === null || x === undefined ? '—' : `${x.toFixed(0)}%`;
 
   return (
-    <div className="mt-6 border-t border-edge pt-4">
-      <div className="mb-2 text-xs font-bold uppercase tracking-[0.17em] text-dim">
+    <div className="mt-6 border-t border-rule pt-4">
+      <div className="mb-2 text-xs font-semibold tracking-[0.01em] text-serosa">
         local inference server · {info.params.toLocaleString()} parameters ·
         epoch {info.checkpoint_epoch}
       </div>
 
-      {busy && <p className="text-base text-[#F2E27A]">{fill(STR.liveComputing)}</p>}
+      {busy && <p className="text-base text-[#6B4E00]">{fill(STR.liveComputing)}</p>}
 
       {!busy && error && (
-        <div className="border-l-[3px] border-blood bg-blood/10 px-4 py-3 text-base
-                        text-[#F0CFCF]">
+        <div className="border-l-[3px] border-signal bg-signal/8 px-4 py-3 text-base
+                        text-oxblood">
           {STR.liveFailed}
-          <span className="mt-1 block text-sm text-dim">{error}</span>
+          <span className="mt-1 block text-sm text-serosa">{error}</span>
         </div>
       )}
 
       {!busy && !error && !row && (
-        <p className="text-base text-[#D8D8DE]">{fill(STR.liveOffer)}</p>
+        <p className="text-base text-ink">{fill(STR.liveOffer)}</p>
       )}
 
       {!busy && row && (
         <>
-          <p className="mb-3 text-base text-[#D8D8DE]">{fill(STR.liveFresh)}</p>
+          <p className="mb-3 text-base text-ink">{fill(STR.liveFresh)}</p>
           {skill && (
             <table className="w-full text-base">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-dim">
+                <tr className="text-xs tracking-[0.01em] text-serosa">
                   <th className="py-1 pr-2 text-left font-semibold">
                     origin {origin} alone
                   </th>
@@ -413,11 +418,11 @@ function LivePanel({ info, row, busy, error, origin, fill }:
               </tbody>
             </table>
           )}
-          <p className="mt-3 text-sm text-dim">{STR.liveScope}</p>
+          <p className="mt-3 text-sm text-serosa">{STR.liveScope}</p>
         </>
       )}
 
-      <p className="mt-3 text-sm text-dim">{fill(STR.liveRange)}</p>
+      <p className="mt-3 text-sm text-serosa">{fill(STR.liveRange)}</p>
     </div>
   );
 }

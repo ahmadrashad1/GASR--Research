@@ -16,7 +16,7 @@ export function Readout({ data, k, placeholder, fill }:
 
   if (!v || !rank) {
     return (
-      <div className="border-t border-edge pt-4 text-lg">
+      <div className="border-t border-rule pt-4 text-lg">
         {placeholder ? STR.noMeasurePlaceholder : fill(STR.noMeasureReal)}
       </div>
     );
@@ -26,11 +26,11 @@ export function Readout({ data, k, placeholder, fill }:
   const pct = (x: number | null, dp: number) => x === null ? '—' : `${x.toFixed(dp)}%`;
 
   return (
-    <div className="border-t border-edge pt-4">
+    <div className="border-t border-rule pt-4">
       <p className="mb-3 text-lg">{v.text}</p>
       <table className="w-full text-base">
         <thead>
-          <tr className="text-xs uppercase tracking-wide text-dim">
+          <tr className="text-xs tracking-[0.01em] text-serosa">
             <th className="py-1 pr-2 text-left font-semibold">{horizonLabel(k, data.timing)}</th>
             <th className="py-1 pr-2 text-right font-semibold">of distance moved</th>
             <th className="py-1 text-right font-semibold">of tissue span</th>
@@ -55,7 +55,7 @@ export function Readout({ data, k, placeholder, fill }:
           ))}
         </tbody>
       </table>
-      <p className="mt-3 text-sm text-dim">{fill(STR.scope)}</p>
+      <p className="mt-3 text-sm text-serosa">{fill(STR.scope)}</p>
     </div>
   );
 }

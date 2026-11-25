@@ -198,9 +198,9 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
     // min-h-0 on every level: a grid item's default min-height is auto, which refuses
     // to shrink below its content, so one unconstrained level anywhere down this chain
     // is enough to let the canvas push the layout past the window.
-    <section className={`grid ${cols} min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]`}>
+    <section className={`grid ${cols} min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] gap-3 p-3`}>
       {wantsFrame && (
-        <div className="relative min-h-0 border-r border-edge">
+        <div className="aperture relative min-h-0 overflow-hidden rounded-[3px]">
           {src ? (
             <>
               <img
@@ -214,9 +214,9 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
               <canvas ref={ovlRef} className="pointer-events-none absolute inset-0 h-full w-full" />
             </>
           ) : (
-            <div className="grid h-full place-content-center p-10 text-center text-dim">
+            <div className="grid h-full place-content-center p-10 text-center text-serosa">
               <div>
-                <b className="mb-2 block text-lg text-bone">{STR.noImageTitle}</b>
+                <b className="mb-2 block text-lg text-ink">{STR.noImageTitle}</b>
                 {hasGeometry ? STR.noImageBodyWithGeometry : STR.noImageBody}
               </div>
             </div>
@@ -225,7 +225,7 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
       )}
 
       {hasGeometry && (
-        <div className="relative min-h-0 min-w-0">
+        <div className="aperture relative min-h-0 min-w-0 overflow-hidden rounded-[3px]">
           <canvas
             ref={geomRef}
             className="block h-full w-full touch-none"
@@ -242,7 +242,8 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
           />
           {legend.length > 0 && (
             <div className="absolute bottom-4 left-4 flex flex-wrap gap-4 rounded
-                            bg-stage/75 px-3 py-2 text-sm">
+                            bg-black/55 px-3 py-2 text-sm text-[#E8E2E0]
+                            ring-1 ring-white/10">
               {legend.map(([key, label]) => (
                 <span key={key} className="flex items-center gap-2">
                   <i className="inline-block h-3 w-3 rounded-sm"
@@ -252,7 +253,7 @@ export function Stage({ data, scene, k, frame, placeholder, yaw, pitch, zoom,
               ))}
             </div>
           )}
-          <div className="absolute right-4 top-4 text-xs text-dim">
+          <div className="absolute right-4 top-4 text-xs text-serosa">
             drag to orbit · scroll to zoom
           </div>
         </div>

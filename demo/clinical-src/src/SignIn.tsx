@@ -37,29 +37,29 @@ export function SignIn({ onSignedIn, onSkip }: {
     onSignedIn();
   }
 
-  const field = 'w-full rounded border border-edge bg-stage px-3 py-2 text-base ' +
-                'text-bone outline-none focus:border-blood';
+  const field = 'w-full rounded border border-rule bg-drape px-3 py-2 text-base ' +
+                'text-ink outline-none focus:border-signal';
 
   return (
     <div className="grid h-full place-content-center px-6">
       <div className="w-[min(92vw,430px)]">
-        <div className="mb-1 text-sm font-bold uppercase tracking-[0.17em] text-blood">
+        <div className="mb-1 text-sm font-semibold tracking-[0.01em] text-signal">
           {STR.signInEyebrow}
         </div>
-        <h2 className="mb-2 mt-0 text-[28px] font-bold leading-tight">
+        <h2 className="mb-2 mt-0 font-display text-[28px] font-bold leading-[1.15]">
           {STR.signInTitle}
         </h2>
-        <p className="mb-5 text-base text-[#D8D8DE]">{STR.signInBody}</p>
+        <p className="mb-5 text-base text-ink">{STR.signInBody}</p>
 
         <form onSubmit={submit}>
-          <label className="mb-1 block text-sm text-dim" htmlFor="roll">
+          <label className="mb-1 block text-sm text-serosa" htmlFor="roll">
             Roll number
           </label>
           <input id="roll" name="roll" className={`${field} mb-3`} value={roll}
                  autoComplete="username" autoFocus disabled={busy}
                  onChange={e => setRoll(e.target.value)} />
 
-          <label className="mb-1 block text-sm text-dim" htmlFor="password">
+          <label className="mb-1 block text-sm text-serosa" htmlFor="password">
             Password
           </label>
           <input id="password" name="password" type="password" className={`${field} mb-4`}
@@ -67,25 +67,25 @@ export function SignIn({ onSignedIn, onSkip }: {
                  onChange={e => setPassword(e.target.value)} />
 
           {error && (
-            <div role="alert" className="mb-4 border-l-[3px] border-blood bg-blood/10
-                                         px-4 py-3 text-base text-[#F0CFCF]">
+            <div role="alert" className="mb-4 border-l-[3px] border-signal bg-signal/8
+                                         px-4 py-3 text-base text-oxblood">
               {error}
             </div>
           )}
 
           <button type="submit" disabled={busy || !roll || !password}
-                  className="w-full rounded border border-blood bg-blood px-4 py-2
-                             text-base font-semibold text-bone
+                  className="w-full rounded border border-signal bg-signal px-4 py-2
+                             text-base font-semibold text-drape
                              disabled:cursor-not-allowed disabled:opacity-40">
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <div className="mt-6 border-t border-edge pt-4">
-          <p className="mb-3 text-sm text-dim">{STR.signInScope}</p>
+        <div className="mt-6 border-t border-rule pt-4">
+          <p className="mb-3 text-sm text-serosa">{STR.signInScope}</p>
           <button type="button" onClick={onSkip}
-                  className="rounded border border-edge px-3 py-1.5 text-sm text-bone
-                             hover:border-blood">
+                  className="rounded border border-rule px-3 py-1.5 text-sm text-ink
+                             hover:border-signal">
             {STR.signInSkip}
           </button>
         </div>
