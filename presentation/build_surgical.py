@@ -11,11 +11,12 @@ green, tissue red, and the gold of the motion arrows in our own figures.
 Twelve slides, in the FYP committee's required order. Everything is embedded:
 fonts, figures and photographs. The file opens with no network at all.
 """
-import base64, html, pathlib, sys
+import base64, html, pathlib, re, sys
 
 HERE = pathlib.Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import arch_svg
+
 
 SKILL = pathlib.Path('/home/ahmadrashad/.claude/plugins/cache/frontend-slides'
                      '/frontend-slides/2.1.0/skills/frontend-slides')
@@ -23,7 +24,11 @@ VIEWPORT_BASE = (SKILL / 'viewport-base.css').read_text()
 FONTS = (HERE / 'fonts' / 'surgical.css').read_text()
 PRES = pathlib.Path('/home/ahmadrashad/Documents/FYP/GASR--Research/presentation')
 IMG = PRES / 'images' / 'crop'
-OUT = PRES / 'FYP2_Mid_Eval_Deck.html'
+LIGHT = '--light' in sys.argv
+OUT = PRES / ('FYP2_Mid_Eval_Deck_Light.html' if LIGHT
+              else 'FYP2_Mid_Eval_Deck.html')
+if LIGHT:
+    arch_svg.use_light()
 
 e = lambda t: html.escape(str(t), quote=False)
 slides = []
@@ -305,10 +310,10 @@ CSS = r"""
    accent, never a field: it marks what matters and nothing else. */
 :root{
   --stage-bg:#050506; --slide-bg:#0A0A0C;
-  --black:#0A0A0C; --char:#131317;        /* ground and raised panels      */
+  --ground:#0A0A0C; --raised:#131317;        /* ground and raised panels      */
   --crimson:#5C0A0A;                      /* dark crimson — overlays, rules */
   --blood:#D62828;                        /* blood red — highlights only    */
-  --white:#F5F5F7;                        /* surgical white — typography    */
+  --fg:#F5F5F7;                        /* surgical white — typography    */
   --flesh:#C98276;                        /* tissue — small accents         */
   --dim:#75757E;                          /* muted, for secondary copy      */
   --panel:rgba(245,245,247,.035); --line:rgba(245,245,247,.11);
@@ -319,7 +324,7 @@ CSS = r"""
   background:
     radial-gradient(90% 70% at 82% 6%,rgba(92,10,10,.34) 0%,rgba(92,10,10,0) 62%),
     radial-gradient(120% 95% at 8% 0%,#141418 0%,#0A0A0C 56%,#050506 100%);
-  font-family:var(--sans); color:var(--white);
+  font-family:var(--sans); color:var(--fg);
   box-sizing:border-box; padding:276px 132px 104px;
 }
 .slide.has-lead{padding-top:356px}
@@ -341,7 +346,7 @@ CSS = r"""
 
 /* === TYPE =============================================== */
 h1{position:absolute;left:132px;right:132px;top:176px;margin:0;font-weight:600;font-size:62px;
-  line-height:1.08;letter-spacing:-.022em;color:var(--white)}
+  line-height:1.08;letter-spacing:-.022em;color:var(--fg)}
 h1.big{font-size:106px;line-height:1.0;top:252px;right:760px;font-weight:600;
   letter-spacing:-.03em;text-shadow:0 2px 40px rgba(0,0,0,.6)}
 h1 em{font-style:normal;color:var(--blood)}
@@ -349,9 +354,9 @@ h1 em{font-style:normal;color:var(--blood)}
   color:var(--dim);max-width:1400px}
 .lead.wide{top:580px;right:900px;font-size:27px;color:#C9C9D2;
   text-shadow:0 1px 24px rgba(0,0,0,.7)}
-.lead b{color:var(--white);font-weight:600}
+.lead b{color:var(--fg);font-weight:600}
 .aside{margin:0 0 18px;font-size:21px;line-height:1.5;color:var(--dim)}
-.aside em{font-style:italic;color:var(--white)}
+.aside em{font-style:italic;color:var(--fg)}
 .aside.small{font-size:18px;color:var(--dim)}
 
 /* === FIGURES ============================================ */
@@ -370,9 +375,9 @@ h1 em{font-style:normal;color:var(--blood)}
 .slide.title > *:not(.hero){z-index:2}
 
 /* === BLOCKS ============================================= */
-.card{background:var(--char);border-top:2px solid var(--line);padding:20px 22px 22px}
+.card{background:var(--raised);border-top:2px solid var(--line);padding:20px 22px 22px}
 .card h3{margin:0 0 10px;font-family:var(--mono);font-size:15px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--white);font-weight:500}
+  text-transform:uppercase;color:var(--fg);font-weight:500}
 .card ul{margin:0;padding:0;list-style:none}
 .card li{font-size:19px;line-height:1.42;color:var(--dim)}
 .card.dense{padding:16px 20px 18px} .card.dense li{font-size:18px}
@@ -387,20 +392,20 @@ h1 em{font-style:normal;color:var(--blood)}
 
 .stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .stats-col{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:24px}
-.stat{background:var(--char);border-left:2px solid var(--line);padding:14px 18px}
-.stat b{display:block;font-size:34px;font-weight:600;line-height:1.1;color:var(--white)}
+.stat{background:var(--raised);border-left:2px solid var(--line);padding:14px 18px}
+.stat b{display:block;font-size:34px;font-weight:600;line-height:1.1;color:var(--fg)}
 .stat i{display:block;font-style:normal;font-family:var(--mono);font-size:13px;letter-spacing:.11em;
   text-transform:uppercase;color:var(--dim);margin-top:7px}
 .stat.green{border-left-color:var(--blood)} .stat.green b{color:var(--blood)}
 .stat.gold{border-left-color:var(--flesh)} .stat.gold b{color:var(--flesh)}
-.stat.steel b{color:var(--white)}
+.stat.steel b{color:var(--fg)}
 
 .note-bar{margin-top:24px;padding:16px 22px;background:rgba(92,10,10,.42);
-  border-left:3px solid var(--blood);font-size:20px;line-height:1.45;color:var(--white)}
+  border-left:3px solid var(--blood);font-size:20px;line-height:1.45;color:var(--fg)}
 .note-bar em{font-style:italic;color:var(--blood)}
 .note-bar.live{border-left-color:var(--blood);background:rgba(92,10,10,.55)}
 .verdict{margin-top:24px;padding:18px 24px;background:rgba(92,10,10,.5);
-  border-left:3px solid var(--blood);font-size:22px;line-height:1.4;color:var(--white)}
+  border-left:3px solid var(--blood);font-size:22px;line-height:1.4;color:var(--fg)}
 .verdict em{font-style:italic;color:var(--blood);font-weight:600}
 
 /* rows */
@@ -409,7 +414,7 @@ h1 em{font-style:normal;color:var(--blood)}
 .rows-hdr span{font-family:var(--mono);font-size:14px;letter-spacing:.2em;text-transform:uppercase}
 .rows-hdr .lh{color:var(--flesh)} .rows-hdr .rh{color:var(--blood);grid-column:3}
 .row{display:grid;grid-template-columns:1fr 46px 1.25fr;align-items:center;margin-bottom:12px}
-.rl,.rr{padding:15px 20px;background:var(--char)}
+.rl,.rr{padding:15px 20px;background:var(--raised)}
 .rl{border-left:2px solid rgba(201,130,118,.5)} .rr{border-left:2px solid var(--blood)}
 .rl b,.rr b{display:block;font-size:20px;font-weight:600;margin-bottom:3px}
 .rl b{color:var(--flesh)} .rr b{color:var(--blood)}
@@ -427,13 +432,13 @@ code{font-family:var(--mono);font-size:15px;color:var(--dim)}
 .step .num{display:flex;align-items:center;justify-content:center;width:48px;height:48px;
   font-size:22px;font-weight:600;color:var(--blood);border:1px solid rgba(214,40,40,.5);
   background:rgba(92,10,10,.3)}
-.step b{display:block;font-size:21px;font-weight:600;color:var(--white);margin-bottom:3px}
+.step b{display:block;font-size:21px;font-weight:600;color:var(--fg);margin-bottom:3px}
 .step span{display:block;font-size:18px;line-height:1.38;color:var(--dim)}
 
 /* objectives + question */
 .objs{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:26px}
-.obj{background:var(--char);border-top:2px solid var(--line);padding:20px 20px 16px}
-.obj b{display:block;font-size:23px;font-weight:600;color:var(--white);margin-bottom:8px}
+.obj{background:var(--raised);border-top:2px solid var(--line);padding:20px 20px 16px}
+.obj b{display:block;font-size:23px;font-weight:600;color:var(--fg);margin-bottom:8px}
 .obj span{display:block;font-size:18px;line-height:1.4;color:var(--dim);min-height:50px}
 .obj i{display:block;font-style:normal;font-family:var(--mono);font-size:13px;letter-spacing:.12em;
   text-transform:uppercase;padding-top:12px;border-top:1px solid var(--line)}
@@ -441,13 +446,13 @@ code{font-family:var(--mono);font-size:15px;color:var(--dim)}
 .qblock{margin-top:34px;padding-top:22px;border-top:1px solid var(--line)}
 .qlab{font-family:var(--mono);font-size:15px;letter-spacing:.22em;text-transform:uppercase;
   color:var(--blood)}
-.qblock p{margin:14px 0 0;font-size:36px;font-weight:500;line-height:1.26;color:var(--white);
+.qblock p{margin:14px 0 0;font-size:36px;font-weight:500;line-height:1.26;color:var(--fg);
   letter-spacing:-.015em}
 .qblock em{font-style:normal;color:var(--blood)}
 
 /* cosine tiles */
 .cos{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;margin-top:22px}
-.cos .c{background:var(--char);border-top:2px solid var(--line);padding:16px;text-align:center}
+.cos .c{background:var(--raised);border-top:2px solid var(--line);padding:16px;text-align:center}
 .cos .c i{display:block;font-style:normal;font-family:var(--mono);font-size:14px;letter-spacing:.18em;
   color:var(--dim);margin-bottom:8px}
 .cos .c b{font-size:38px;font-weight:600;line-height:1}
@@ -473,7 +478,7 @@ code{font-family:var(--mono);font-size:15px;color:var(--dim)}
 /* title slide */
 .byline{position:absolute;left:132px;top:784px;font-family:var(--mono);font-size:17px;
   line-height:1.95;letter-spacing:.04em;color:var(--dim);z-index:2}
-.byline span{color:var(--white)}
+.byline span{color:var(--fg)}
 
 /* === REVEAL ============================================= */
 .r{opacity:0}
@@ -498,6 +503,95 @@ code{font-family:var(--mono);font-size:15px;color:var(--dim)}
   .r{opacity:1!important;animation:none!important;transform:none!important}
 }
 """
+
+
+# ════════════════════════════════════════════════════════════════════
+# LIGHT THEME — the same deck under theatre lights instead of red ones.
+#
+# One source, two grounds. The dark deck is the committed mid-eval deck and is
+# reproduced byte-for-byte when --light is absent; everything below runs only
+# when it is passed, so the recolour cannot drift from the original by being a
+# separate copy of 1,100 lines.
+#
+# The palette is the demonstrator's, sampled from the sequence's own frames:
+# #481818 is the dominant tissue colour, #A85A4A a darkened tissue tone that
+# survives on white (the original #C98276 sits at 2.4:1 against it and fails),
+# and the red stays #D62828 because the legend, the page and the printed deck
+# must agree on what red means.
+_LIGHT_ROOT = """:root{
+  --stage-bg:#E9E3E2; --slide-bg:#FFFFFF;
+  --ground:#FFFFFF; --raised:#F7F3F2;     /* ground and raised panels       */
+  --crimson:#5C0A0A;                      /* dark crimson — rules, deep type */
+  --blood:#D62828;                        /* blood red — highlights only     */
+  --fg:#2A1412;                           /* oxblood-black — typography      */
+  --flesh:#A85A4A;                        /* tissue, darkened to read on white */
+  --dim:#6F5B58;                          /* muted, for secondary copy       */
+  --panel:rgba(72,24,24,.05); --line:rgba(72,24,24,.15);
+  --sans:'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif;
+  --mono:'IBM Plex Mono',Consolas,monospace;
+}"""
+
+# Everything the variables do not reach: washes, fades, hairlines and shadows
+# that were written as literal dark-on-light alphas.
+_LIGHT_SUBS = [
+  # the slide ground itself
+  ("radial-gradient(90% 70% at 82% 6%,rgba(92,10,10,.34) 0%,rgba(92,10,10,0) 62%),\n"
+   "    radial-gradient(120% 95% at 8% 0%,#141418 0%,#0A0A0C 56%,#050506 100%)",
+   "radial-gradient(90% 70% at 82% 6%,rgba(214,40,40,.06) 0%,rgba(214,40,40,0) 62%),\n"
+   "    radial-gradient(120% 95% at 8% 0%,#FFFFFF 0%,#FDFBFB 56%,#F7F2F1 100%)"),
+  # the title photograph now has to fade into white, not into black
+  ("linear-gradient(100deg,#07070A 0%,rgba(7,7,10,.94) 34%,rgba(7,7,10,.6) 62%,rgba(7,7,10,.35) 100%)",
+   "linear-gradient(100deg,#FFFFFF 0%,rgba(255,255,255,.95) 32%,rgba(255,255,255,.72) 60%,"
+   "rgba(255,255,255,.42) 100%)"),
+  ("object-position:62% 46%;opacity:.62", "object-position:62% 46%;opacity:.5"),
+  ("radial-gradient(85% 70% at 76% 42%,rgba(92,10,10,.62) 0%,rgba(92,10,10,0) 70%)",
+   "radial-gradient(85% 70% at 76% 42%,rgba(214,40,40,.16) 0%,rgba(214,40,40,0) 70%)"),
+  # type that sat on dark imagery
+  ("text-shadow:0 2px 40px rgba(0,0,0,.6)", "text-shadow:0 2px 40px rgba(255,255,255,.9)"),
+  ("color:#C9C9D2;\n  text-shadow:0 1px 24px rgba(0,0,0,.7)",
+   "color:#3E2420;\n  text-shadow:0 1px 24px rgba(255,255,255,.9)"),
+  ("color:rgba(110,135,130,.7)", "color:var(--dim)"),
+  # washes behind call-outs: opaque crimson becomes a tint
+  ("background:rgba(92,10,10,.42)", "background:rgba(214,40,40,.07)"),
+  ("background:rgba(92,10,10,.55)", "background:rgba(214,40,40,.12)"),
+  ("background:rgba(92,10,10,.5)", "background:rgba(214,40,40,.09)"),
+  ("background:rgba(92,10,10,.3)", "background:rgba(214,40,40,.08)"),
+  # hairlines and arrows
+  ("border:1px solid rgba(245,245,247,.09)", "border:1px solid rgba(72,24,24,.18)"),
+  ("background:rgba(245,245,247,.17)", "background:rgba(72,24,24,.22)"),
+  ("border-left:8px solid rgba(245,245,247,.4)", "border-left:8px solid rgba(72,24,24,.45)"),
+  ("border-bottom:1px solid rgba(245,245,247,.07)", "border-bottom:1px solid rgba(72,24,24,.12)"),
+  ("border-left:2px solid rgba(201,130,118,.5)", "border-left:2px solid rgba(168,90,74,.55)"),
+  ("border-top-color:rgba(117,117,126,.5)", "border-top-color:rgba(111,91,88,.45)"),
+  ("box-shadow:0 0 24px rgba(214,40,40,.75)", "box-shadow:0 0 18px rgba(214,40,40,.35)"),
+  # deck chrome
+  ("background:rgba(5,5,6,.85);\n  border:1px solid rgba(245,245,247,.15)",
+   "background:rgba(255,255,255,.93);\n  border:1px solid rgba(72,24,24,.18)"),
+  ("color:#8A8A92;opacity:0", "color:#6F5B58;opacity:0"),
+  ("button{background:none;border:0;color:#8A8A92", "button{background:none;border:0;color:#6F5B58"),
+  ("button:hover{color:#F5F5F7}", "button:hover{color:#2A1412}"),
+  # print
+  (".slide{background:#0A0A0C!important", ".slide{background:#FFFFFF!important"),
+]
+
+
+def _lighten(css):
+    """Invert the ground. Fails loudly: a recolour that silently half-applies
+    leaves white text on white, which is worse than not running at all."""
+    out = re.sub(r":root\{.*?\n\}", _LIGHT_ROOT, css, count=1, flags=re.S)
+    if out == css:
+        raise SystemExit("light theme: :root block not found")
+    missing = [old for old, _ in _LIGHT_SUBS if old not in out]
+    if missing:
+        raise SystemExit("light theme: %d substitution(s) did not match:\n  %s"
+                         % (len(missing), "\n  ".join(m[:70] for m in missing)))
+    for old, new in _LIGHT_SUBS:
+        out = out.replace(old, new)
+    return out
+
+
+if LIGHT:
+    CSS = _lighten(CSS)
 
 JS = r"""
 function fitStage(){

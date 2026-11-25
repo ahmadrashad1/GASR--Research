@@ -24,6 +24,25 @@ PURPLE  = ('#1A1216', '#C98276')   # linear              — flesh
 GREEN   = ('#2C0C0C', '#D62828')   # outputs             — blood
 WHITE   = ('#121216', '#4C4C56')
 
+# The same plate on a white ground, for the light deck. Fills become tints and
+# strokes darken: the dark palette's #C98276 and #6F8796 sit near 2.4:1 against
+# white and would be decoration rather than labelling. Called before build().
+_LIGHT = dict(
+    PAPER='#FFFFFF', INK='#2A1412', LINE='#8A6F6B', GREY_T='#6F5B58',
+    CONT_F='#F8F5F4', CONT_S='#DFD3D1',
+    PINK=('#FBEFEC', '#A85A4A'),      # inputs / encoders   — tissue
+    ORANGE=('#FBE8E8', '#D62828'),    # attention           — blood
+    BLUE=('#EEF2F5', '#4A5E6B'),      # feed-forward        — steel
+    OLIVE=('#F3F1F0', '#5A5A62'),     # add & norm          — neutral
+    PURPLE=('#FBEFEC', '#A85A4A'),    # linear              — tissue
+    GREEN=('#FBE8E8', '#D62828'),     # outputs             — blood
+    WHITE=('#F5F2F1', '#6A6A74'),
+)
+
+
+def use_light():
+    globals().update(_LIGHT)
+
 P = []
 
 
