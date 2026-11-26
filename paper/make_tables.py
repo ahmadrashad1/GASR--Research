@@ -408,12 +408,27 @@ else:
                 'Pending: run Module 7 (module7\\_comparison.json not found).')
 
 # ── Table 1b: direction vs magnitude, the decisive measurement ───────
-if MEAS.get('direction'):
+# Live first. This table read measured.json unconditionally while the macros beside it
+# read module6_metrics.json, so with Drive present the prose said one set of cosines
+# (+0.71 at k=1) and the table printed another (+0.57) -- the paper contradicting
+# itself inside one page, which is the failure this file exists to prevent.
+_dir_live = {k: v['cos'] for k, v in (D['m6'] or {}).get('direct', {}).items()
+             if isinstance(v, dict) and 'cos' in v}
+_dir_src = ''
+if _dir_live:
+    d = _dir_live
+    _dir_src = (' Measured at the horizons Module 4 trains on; the rollout beyond them '
+                'reports error, not direction.')
+elif MEAS.get('direction'):
     d = MEAS['direction']['cosine_by_step']
+    _dir_src = ' Transcribed from an earlier run rather than read from a result file.'
+else:
+    d = None
+if d:
     W(r'\begin{table}[t]\centering')
     W(r'\caption{Directional agreement between predicted and true displacement, by '
       r'prediction horizon. A model that had learned nothing would sit near zero at every '
-      r'horizon.}\label{tab:direction}')
+      r'horizon.' + _dir_src + r'}\label{tab:direction}')
     W(r'\begin{tabular}{l' + 'r' * len(d) + r'}\hline')
     W('Horizon $k$ & ' + ' & '.join(str(h) for h in sorted(d, key=int)) + r'\\')
     W(r'$\cos(\hat{\Delta}, \Delta)$ & '

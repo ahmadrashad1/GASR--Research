@@ -69,3 +69,7 @@ serve/doctors.json.tmp
 # a video of a patient every bit as much as the frames it was made from.
 demo/*.mp4
 demo/predicted_future*.mp4
+
+# Local mirror of the Drive result files, pulled with rclone. Read-only cache: the
+# originals live on Drive and module9_demo/demo_data.json carries patient geometry.
+.drive-cache/
