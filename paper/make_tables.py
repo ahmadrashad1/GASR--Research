@@ -53,6 +53,22 @@ for key, path in SRC.items():
 # comparison instead of a placeholder -- and so every macro the prose quotes (oursRank,
 # accuracyVerdict, bestMethod) is derived from it exactly as it would be from the live
 # file. The live file always wins; the caption says which one was used.
+# Module 8's Studies A and B survive only as results/module8_hpo.json in this
+# repository: Study C OOMed on 19 November before the cell's final json.dump, so the
+# 14.3 h existed as console text until it was transcribed. The file carries an
+# instruction to copy itself to Drive which was never carried out, which is why
+# {DRIVE}/module8/ is empty. Look in the repo before giving up on the tables.
+M8_LOCAL = False
+if D['m8'] is None:
+    _m8 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       'results', 'module8_hpo.json')
+    try:
+        D['m8'] = json.load(open(_m8))
+        M8_LOCAL = True
+        print(f'  m8: {_m8} (recovered transcription) -- Drive copy absent')
+    except Exception:
+        pass
+
 M7_TRANSCRIBED = False
 if D['m7'] is None and MEAS.get('baselines'):
     D['m7'] = MEAS['baselines']
@@ -443,7 +459,10 @@ if D['m8'] and D['m8']['results'].get('A_inference'):
     W(r'\begin{table}[t]\centering')
     W(r'\caption{Inference cost against accuracy. Each prediction costs '
       r'(steps $\times$ samples) network evaluations. The marked row is the cheapest '
-      r'setting within 1\% of the best accuracy.}\label{tab:inference}')
+      r'setting within 1\% of the best accuracy.'
+      + (r' Transcribed from the run console; the result file was lost to an OOM.'
+         if M8_LOCAL else '')
+      + r'}\label{tab:inference}')
     W(r'\begin{tabular}{rrrr}\hline')
     W(r'Steps & Samples & Evaluations & MPE \\ \hline')
     for _, v in sorted(g.items(), key=lambda kv: kv[1]['forward_passes']):

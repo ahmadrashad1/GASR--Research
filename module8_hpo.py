@@ -58,10 +58,15 @@ CKPT_BEST    = f'{MODULE5_DIR}/diffusion_ckpt_best.pth'
 CKPT_LATEST  = f'{MODULE5_DIR}/diffusion_ckpt.pth'
 os.makedirs(MODULE8_DIR, exist_ok=True)
 
-# Studies A and B completed on 19 November 2026 and their results are in
-# module8_hpo.json on Drive, which this cell reloads at startup -- so turning them off
-# here does NOT drop them from the output or the figure. Only re-enable one to re-measure
-# it. Study A cost 8.3 h and Study B 6.0 h; neither needs repeating.
+# Studies A and B completed on 19 November 2026, but NOT to Drive. Study C OOMed before
+# the cell's single json.dump could run, so 14.3 h of results existed only as console
+# text until they were transcribed into results/module8_hpo.json in the repository.
+# Checked on 26 November 2026: {DRIVE_BASE}/module8/ is still empty.
+#
+# SO: copy results/module8_hpo.json to {DRIVE_BASE}/module8/module8_hpo.json BEFORE
+# running this cell. The resume block below reloads whatever is on Drive; with nothing
+# there, a Study C run writes a file containing Study C alone and the figure comes back
+# with the A and B panels blank -- losing the 14.3 h a second time, in the same way.
 RUN_A, RUN_B, RUN_C = False, False, True
 RUN_D = False            # opt-in: retrains the diffusion model once per ablation. The
                           # budget is printed before anything starts -- read it first.
