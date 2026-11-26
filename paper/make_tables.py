@@ -48,6 +48,17 @@ for key, path in SRC.items():
         D[key] = None
         print(f'  MISSING {key}: {path} ({type(e).__name__}) -- placeholder will be emitted')
 
+# Module 7 has run; its JSON is on Drive. measured.json carries a transcription of the
+# same numbers in the same shape, so a build without Drive still reports the real
+# comparison instead of a placeholder -- and so every macro the prose quotes (oursRank,
+# accuracyVerdict, bestMethod) is derived from it exactly as it would be from the live
+# file. The live file always wins; the caption says which one was used.
+M7_TRANSCRIBED = False
+if D['m7'] is None and MEAS.get('baselines'):
+    D['m7'] = MEAS['baselines']
+    M7_TRANSCRIBED = True
+    print('  m7: measured.json (transcribed) -- live file absent')
+
 # Macros must be defined in the preamble (the abstract uses them); tables must appear in
 # the body. They therefore go to separate files -- inputting one file in both places would
 # redefine every macro and abort the build.
@@ -214,7 +225,14 @@ if D['m7'] and 'Ours \u2014 diffusion' in D['m7'].get('results', {}):
     _cv = _r.get('Constant velocity', {}).get('per_horizon', {})
     for _k, _nm in (('1', 'One'), ('3', 'Three')):
         if _k in _cv and _k in _o['per_horizon']:
-            _d = _pct_better(_cv[_k]['cd'], _o['per_horizon'][_k]['cd'])
+            # Chamfer per horizon when the live file supplies it. A transcription of the
+            # run output does not: Module 7 prints per-horizon MPE only. Both are
+            # distances and the sentence that quotes this names neither, so falling back
+            # keeps the comparison within one metric rather than mixing two.
+            _m = 'cd' if ('cd' in _cv[_k] and 'cd' in _o['per_horizon'][_k]) else 'mpe'
+            if _m not in _cv[_k] or _m not in _o['per_horizon'][_k]:
+                continue
+            _d = _pct_better(_cv[_k][_m], _o['per_horizon'][_k][_m])
             macro(f'cvMargin{_nm}', f'{abs(_d):.1f}')
             macro(f'cvVerdict{_nm}',
                   'better than' if _d > 0 else 'behind')
@@ -346,7 +364,11 @@ if D['m7']:
       r'prediction methods. All methods are evaluated on the identical held-out windows '
       r'under one protocol. CD is Chamfer Distance (correspondence-free); MPE is Mean '
       r'Point Error, available because Gaussian identity is preserved across frames. '
-      r'Lower is better.}\label{tab:comparison}')
+      r'Lower is better.'
+      + (r' Transcribed from the Module 7 run output rather than read from '
+         r'module7\_comparison.json, which was not on this machine at build time.'
+         if M7_TRANSCRIBED else '')
+      + r'}\label{tab:comparison}')
     W(r'\begin{tabular}{llrrr' + 'r' * len(horizons) + r'}\hline')
     W(r'Family & Method & Params & CD & MPE & '
       + ' & '.join(rf'MPE $k{{=}}{h}$' for h in horizons) + r'\\ \hline')
